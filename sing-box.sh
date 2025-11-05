@@ -961,7 +961,6 @@ show_usage() {
 show_menu() {
     echo -e "
   ${green}sing-box 后端管理脚本，${plain}${red}不适用于docker${plain}
---- https://github.com/wyx2685/V2bX ---
   ${green}0.${plain} 修改配置
 ————————————————
   ${green}1.${plain} 安装 sing-box
