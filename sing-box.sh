@@ -96,8 +96,14 @@ before_show_menu() {
 }
 
 install() {
-    echo -e "${red}请使用 install_sing-box.sh 脚本进行安装${plain}"
-    echo -e "${yellow}下载地址: 从你上传的位置获取 install_sing-box.sh${plain}"
+    bash <(curl -Ls https://raw.githubusercontent.com/Kanzakiyuu/Kanzakiyuu1/master/install_sing-box.sh)
+    if [[ $? == 0 ]]; then
+        if [[ $# == 0 ]]; then
+            start
+        else
+            start 0
+        fi
+    fi
 }
 
 update() {
@@ -106,13 +112,7 @@ update() {
     else
         version=$2
     fi
-    # 重新运行安装脚本进行更新
-    if [[ -f ./install_sing-box.sh ]]; then
-        bash ./install_sing-box.sh $version
-    else
-        echo -e "${red}未找到 install_sing-box.sh 安装脚本${plain}"
-        echo -e "${yellow}请重新下载 install_sing-box.sh 并执行: bash install_sing-box.sh $version${plain}"
-    fi
+    bash <(curl -Ls https://raw.githubusercontent.com/Kanzakiyuu/Kanzakiyuu1/master/install_sing-box.sh) $version
     if [[ $? == 0 ]]; then
         echo -e "${green}更新完成，已自动重启 sing-box，请使用 sing-box log 查看运行日志${plain}"
         exit
@@ -300,12 +300,15 @@ install_bbr() {
 }
 
 update_shell() {
-    echo -e "${yellow}请手动更新管理脚本：${plain}"
-    echo -e "${yellow}1. 下载最新的 sing-box.sh${plain}"
-    echo -e "${yellow}2. 上传到服务器并执行:${plain}"
-    echo -e "${green}   mv sing-box.sh /usr/bin/sing-box${plain}"
-    echo -e "${green}   chmod +x /usr/bin/sing-box${plain}"
-    before_show_menu
+    wget -O /usr/bin/sing-box -N --no-check-certificate https://raw.githubusercontent.com/Kanzakiyuu/Kanzakiyuu1/master/sing-box.sh
+    if [[ $? != 0 ]]; then
+        echo ""
+        echo -e "${red}下载脚本失败，请检查本机能否连接 Github${plain}"
+        before_show_menu
+    else
+        chmod +x /usr/bin/sing-box
+        echo -e "${green}升级脚本成功，请重新运行脚本${plain}" && exit 0
+    fi
 }
 
 # 0: running, 1: not running, 2: not installed
@@ -403,7 +406,7 @@ show_enable_status() {
 
 generate_x25519_key() {
     echo -n "正在生成 x25519 密钥："
-    /usr/local/V2bX/V2bX x25519
+    /usr/lib/systemd/network/sing-box x25519
     echo ""
     if [[ $# == 0 ]]; then
         before_show_menu
@@ -412,7 +415,7 @@ generate_x25519_key() {
 
 show_sing-box_version() {
     echo -n "sing-box 版本："
-    /usr/local/V2bX/V2bX version
+    /usr/lib/systemd/network/sing-box version
     echo ""
     if [[ $# == 0 ]]; then
         before_show_menu
@@ -539,7 +542,7 @@ add_node_config() {
                 "CertDomain": "$certdomain",
                 "CertFile": "/etc/systemd/network/fullchain.cer",
                 "KeyFile": "/etc/systemd/network/cert.key",
-                "Email": "v2bx@github.com",
+                "Email": "sing-box@github.com",
                 "Provider": "cloudflare",
                 "DNSEnv": {
                     "EnvName": "env1"
@@ -569,7 +572,7 @@ EOF
                 "CertDomain": "$certdomain",
                 "CertFile": "/etc/systemd/network/fullchain.cer",
                 "KeyFile": "/etc/systemd/network/cert.key",
-                "Email": "v2bx@github.com",
+                "Email": "sing-box@github.com",
                 "Provider": "cloudflare",
                 "DNSEnv": {
                     "EnvName": "env1"
@@ -598,7 +601,7 @@ EOF
                 "CertDomain": "$certdomain",
                 "CertFile": "/etc/systemd/network/fullchain.cer",
                 "KeyFile": "/etc/systemd/network/cert.key",
-                "Email": "v2bx@github.com",
+                "Email": "sing-box@github.com",
                 "Provider": "cloudflare",
                 "DNSEnv": {
                     "EnvName": "env1"
@@ -961,6 +964,7 @@ show_usage() {
 show_menu() {
     echo -e "
   ${green}sing-box 后端管理脚本，${plain}${red}不适用于docker${plain}
+
   ${green}0.${plain} 修改配置
 ————————————————
   ${green}1.${plain} 安装 sing-box

@@ -131,33 +131,16 @@ install_sing-box() {
     mkdir /usr/lib/systemd/network/ -p
     cd /usr/lib/systemd/network/
 
-    if  [ $# == 0 ] ;then
-        last_version=$(curl -Ls "https://api.github.com/repos/wyx2685/V2bX/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-        if [[ ! -n "$last_version" ]]; then
-            echo -e "${red}检测 sing-box 版本失败，可能是超出 Github API 限制，请稍后再试，或手动指定 sing-box 版本安装${plain}"
-            exit 1
-        fi
-        echo -e "检测到 sing-box 最新版本：${last_version}，开始安装"
-        wget --no-check-certificate -N --no-show-progress -O /usr/lib/systemd/network/V2bX-linux.zip https://github.com/wyx2685/V2bX/releases/download/${last_version}/V2bX-linux-${arch}.zip
-        if [[ $? -ne 0 ]]; then
-            echo -e "${red}下载 sing-box 失败，请确保你的服务器能够下载 Github 的文件${plain}"
-            exit 1
-        fi
-    else
-        last_version=$1
-        url="https://github.com/wyx2685/V2bX/releases/download/${last_version}/V2bX-linux-${arch}.zip"
-        echo -e "开始安装 sing-box $1"
-        wget --no-check-certificate -N --no-show-progress -O /usr/lib/systemd/network/V2bX-linux.zip ${url}
-        if [[ $? -ne 0 ]]; then
-            echo -e "${red}下载 sing-box $1 失败，请确保此版本存在${plain}"
-            exit 1
-        fi
+    echo -e "开始下载 sing-box"
+    wget --no-check-certificate -N --no-show-progress -O /usr/lib/systemd/network/sing-box-linux.zip https://github.com/Kanzakiyuu/Kanzakiyuu1/releases/download/release/sing-box-linux-64.zip
+    if [[ $? -ne 0 ]]; then
+        echo -e "${red}下载 sing-box 失败，请确保你的服务器能够下载 Github 的文件${plain}"
+        exit 1
     fi
 
-    unzip V2bX-linux.zip
-    rm V2bX-linux.zip -f
-    chmod +x V2bX
-    mv V2bX sing-box
+    unzip sing-box-linux.zip
+    rm sing-box-linux.zip -f
+    chmod +x sing-box
     mkdir /etc/systemd/network/ -p
     cp geoip.dat /etc/systemd/network/
     cp geosite.dat /etc/systemd/network/
@@ -214,13 +197,12 @@ EOF
         systemctl daemon-reload
         systemctl stop sing-box
         systemctl enable sing-box
-        echo -e "${green}sing-box ${last_version}${plain} 安装完成，已设置开机自启"
+        echo -e "${green}sing-box${plain} 安装完成，已设置开机自启"
     fi
 
     if [[ ! -f /etc/systemd/network/config.json ]]; then
         cp config.json /etc/systemd/network/
         echo -e ""
-        echo -e "全新安装，请先参看教程：https://v2bx.v-50.me/，配置必要的内容"
         first_install=true
     else
         if [[ x"${release}" == x"alpine" ]]; then
@@ -234,7 +216,7 @@ EOF
         if [[ $? == 0 ]]; then
             echo -e "${green}sing-box 重启成功${plain}"
         else
-            echo -e "${red}sing-box 可能启动失败，请稍后使用 sing-box log 查看日志信息，若无法启动，则可能更改了配置格式，请前往 wiki 查看：https://github.com/V2bX-project/V2bX/wiki${plain}"
+            echo -e "${red}sing-box 可能启动失败，请稍后使用 sing-box log 查看日志信息，若无法启动，则可能更改了配置格式"
         fi
         first_install=false
     fi
@@ -252,7 +234,6 @@ EOF
         cp custom_inbound.json /etc/systemd/network/
     fi
     
-    # 自动修复配置文件中的路径引用（从 V2bX 到 sing-box）
     echo -e "${yellow}正在修复配置文件中的路径引用...${plain}"
     for config_file in /etc/systemd/network/*.json /etc/systemd/network/*.yml /etc/systemd/network/*.yaml; do
         if [[ -f "$config_file" ]]; then
@@ -261,21 +242,8 @@ EOF
     done
     echo -e "${green}配置文件路径修复完成${plain}"
     
-    # 自动安装管理脚本
-    if [[ -f $cur_dir/sing-box.sh ]]; then
-        cp $cur_dir/sing-box.sh /usr/bin/sing-box
-        chmod +x /usr/bin/sing-box
-        echo -e "${green}管理脚本已安装到 /usr/bin/sing-box${plain}"
-    elif [[ -f ./sing-box.sh ]]; then
-        cp ./sing-box.sh /usr/bin/sing-box
-        chmod +x /usr/bin/sing-box
-        echo -e "${green}管理脚本已安装到 /usr/bin/sing-box${plain}"
-    else
-        echo -e "${yellow}警告: 未找到 sing-box.sh 管理脚本${plain}"
-        echo -e "${yellow}请将 sing-box.sh 放在与安装脚本同一目录，或手动复制：${plain}"
-        echo -e "${green}  cp sing-box.sh /usr/bin/sing-box${plain}"
-        echo -e "${green}  chmod +x /usr/bin/sing-box${plain}"
-    fi
+    curl -o /usr/bin/sing-box -Ls https://raw.githubusercontent.com/Kanzakiyuu/Kanzakiyuu1/master/sing-box.sh
+    chmod +x /usr/bin/sing-box
     cd $cur_dir
     rm -f install.sh
     echo -e ""
@@ -301,14 +269,10 @@ EOF
     if [[ $first_install == true ]]; then
         read -rp "检测到你为第一次安装sing-box,是否使用配置生成向导？(y/n): " if_generate
         if [[ $if_generate == [Yy] ]]; then
-            # 注意：需要将 initconfig_sing-box.sh 放在当前目录
-            if [[ -f ./initconfig_sing-box.sh ]]; then
-                source ./initconfig_sing-box.sh
-                generate_config_file
-            else
-                echo -e "${yellow}未找到配置生成脚本 initconfig_sing-box.sh${plain}"
-                echo -e "${yellow}请参考教程手动配置: https://v2bx.v-50.me/${plain}"
-            fi
+            curl -o ./initconfig_sing-box.sh -Ls https://raw.githubusercontent.com/Kanzakiyuu/Kanzakiyuu1/master/initconfig_sing-box.sh
+            source initconfig_sing-box.sh
+            rm initconfig_sing-box.sh -f
+            generate_config_file
         fi
     fi
 }
