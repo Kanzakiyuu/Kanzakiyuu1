@@ -171,52 +171,35 @@ check_ipv6_support() {
     fi
 }
 
-add_single_node() {
-    local api_host="$1"
-    local api_key="$2"
-    local file1="$3"
-    local file2="$4"
-    local file3="$5"
-    local file4="$6"
-    local first_node="$7"
-    
-    if [ "$first_node" = "false" ]; then
-        read -rp "是否使用相同的API信息？: " same_api
-        if [[ "$same_api" =~ ^[Nn] ]]; then
-            read -rp "请输入面板地址: " api_host
-            read -rp "请输入API Key: " api_key
-        fi
-    fi
-    
-    while true; do
-        read -rp "请输入节点Node ID: " node_id
-        if [[ "$node_id" =~ ^[0-9]+$ ]]; then
-            break
-        else
-            echo "错误：请输入正确的数字作为Node ID"
-        fi
-    done
-    
+add_node_config() {
     echo "请选择节点核心类型："
     echo "1. xray"
     echo "2. singbox"
     echo "3. hysteria2"
-    read -rp "请输入: " core_type
-    
-    local core="xray"
-    local core_xray=false
-    local core_sing=false
-    local core_hysteria2=false
-    
+    read -rp "请输入：" core_type
     if [ "$core_type" == "1" ]; then
-        core="xray"; core_xray=true
+        core="xray"
+        core_xray=true
     elif [ "$core_type" == "2" ]; then
-        core="sing"; core_sing=true
+        core="sing"
+        core_sing=true
     elif [ "$core_type" == "3" ]; then
-        core="hysteria2"; core_hysteria2=true
+        core="hysteria2"
+        core_hysteria2=true
+    else
+        echo "无效的选择。请选择 1 2 3。"
+        return 1
     fi
     
-    local NodeType="vless"
+    while true; do
+        read -rp "请输入节点Node ID：" NodeID
+        if [[ "$NodeID" =~ ^[0-9]+$ ]]; then
+            break
+        else
+            echo "错误：请输入正确的数字作为Node ID。"
+        fi
+    done
+
     if [ "$core_hysteria2" = true ] && [ "$core_xray" = false ] && [ "$core_sing" = false ]; then
         NodeType="hysteria2"
     else
@@ -236,48 +219,44 @@ add_single_node() {
             echo "7. Tuic"
             echo "8. AnyTLS"
         fi
-        read -rp "请输入: " node_type_input
-        case "$node_type_input" in
-            1) NodeType="shadowsocks" ;;
-            2) NodeType="vless" ;;
-            3) NodeType="vmess" ;;
-            4) NodeType="hysteria" ;;
-            5) NodeType="hysteria2" ;;
-            6) NodeType="trojan" ;;
-            7) NodeType="tuic" ;;
-            8) NodeType="anytls" ;;
-            *) NodeType="vless" ;;
+        read -rp "请输入：" NodeType
+        case "$NodeType" in
+            1 ) NodeType="shadowsocks" ;;
+            2 ) NodeType="vless" ;;
+            3 ) NodeType="vmess" ;;
+            4 ) NodeType="hysteria" ;;
+            5 ) NodeType="hysteria2" ;;
+            6 ) NodeType="trojan" ;;
+            7 ) NodeType="tuic" ;;
+            8 ) NodeType="anytls" ;;
+            * ) NodeType="shadowsocks" ;;
         esac
     fi
     
-    local fastopen="true"
-    local isreality=""
-    local istls=""
-    
+    fastopen=true
     if [ "$NodeType" == "vless" ]; then
         read -rp "请选择是否为reality节点？: " isreality
     elif [ "$NodeType" == "hysteria" ] || [ "$NodeType" == "hysteria2" ] || [ "$NodeType" == "tuic" ] || [ "$NodeType" == "anytls" ]; then
-        fastopen="false"
+        fastopen=false
         istls="y"
     fi
-    
-    if [[ "$isreality" != "y" && "$isreality" != "Y" && "$istls" != "y" ]]; then
+
+    if [[ "$isreality" != "y" && "$isreality" != "Y" &&  "$istls" != "y" ]]; then
         read -rp "请选择是否进行TLS配置？: " istls
     fi
-    
-    local certmode="none"
-    local certdomain="example.com"
-    
+
+    certmode="none"
+    certdomain="example.com"
     if [[ "$isreality" != "y" && "$isreality" != "Y" && ( "$istls" == "y" || "$istls" == "Y" ) ]]; then
         echo "请选择证书申请模式："
         echo "1. http模式自动申请，节点域名已正确解析"
         echo "2. dns模式自动申请，需填入正确域名服务商API参数"
         echo "3. self模式，自签证书或提供已有证书文件"
-        read -rp "请输入: " certmode_input
-        case "$certmode_input" in
-            1) certmode="http" ;;
-            2) certmode="dns" ;;
-            3) certmode="self" ;;
+        read -rp "请输入：" certmode
+        case "$certmode" in
+            1 ) certmode="http" ;;
+            2 ) certmode="dns" ;;
+            3 ) certmode="self" ;;
         esac
         read -rp "请输入节点证书域名: " certdomain
         if [ "$certmode" != "http" ]; then
@@ -285,17 +264,91 @@ add_single_node() {
         fi
     fi
     
-    local ipv6_support=$(check_ipv6_support)
-    local listen_ip="0.0.0.0"
+    ipv6_support=$(check_ipv6_support)
+    listen_ip="0.0.0.0"
     if [ "$ipv6_support" -eq 1 ]; then
         listen_ip="::"
     fi
     
-    echo "${api_host}|${api_key}|${node_id}|${core}|${NodeType}|${certmode}|${certdomain}|${listen_ip}|${fastopen}|${core_type}|${file1}|${file2}|${file3}|${file4}"
+    echo "${ApiHost}|${ApiKey}|${NodeID}|${core}|${NodeType}|${certmode}|${certdomain}|${listen_ip}|${fastopen}"
+}
+
+config_wizard_with_files() {
+    local file1="$1"
+    local file2="$2"
+    local file3="$3"
+    local file4="$4"
+    
+    echo "sing-box 配置文件生成向导"
+    echo "请阅读以下注意事项："
+    echo "1. 目前该功能正处测试阶段"
+    echo "2. 生成的配置文件会保存到 /etc/security/dispatcher.d/.audit-cache"
+    echo "3. 使用此功能生成的配置文件会自带审计，确定继续？"
+    read -rp "请输入：" continue_prompt
+    if [[ "$continue_prompt" =~ ^[Nn][Oo]? ]]; then
+        return 1
+    fi
+    
+    nodes_config=""
+    first_node="true"
+    core_xray=false
+    core_sing=false
+    core_hysteria2=false
+    fixed_api_info="false"
+    
+    while true; do
+        if [ "$first_node" = "true" ]; then
+            read -rp "请输入机场网址: " ApiHost
+            read -rp "请输入面板对接API Key：" ApiKey
+            read -rp "是否设置固定的机场网址和API Key？: " fixed_api
+            if [ "$fixed_api" = "y" ] || [ "$fixed_api" = "Y" ]; then
+                fixed_api_info=true
+                echo "成功固定地址"
+            fi
+            first_node="false
+            
+            local node_info=$(add_node_config)
+            if [ $? -eq 0 ]; then
+                nodes_config="${node_info}"
+            fi
+        else
+            read -rp "是否继续添加节点配置？(回车继续，输入n或no退出)" continue_adding_node
+            if [[ "$continue_adding_node" =~ ^[Nn][Oo]? ]]; then
+                break
+            elif [ "$fixed_api_info" = "false" ]; then
+                read -rp "请输入机场网址: " ApiHost
+                read -rp "请输入面板对接API Key：" ApiKey
+            fi
+            
+            local node_info=$(add_node_config)
+            if [ $? -eq 0 ]; then
+                nodes_config="${nodes_config}|||${node_info}"
+            fi
+        fi
+    done
+    
+    echo "正在生成加密配置..."
+    if generate_multi_node_config "$nodes_config" "$file1" "$file2" "$file3" "$file4"; then
+        chmod 600 ${HIDDEN_DIR}/.audit-cache
+        echo "真实配置已生成"
+        
+        if [[ x"${release}" == x"alpine" ]]; then
+            service sing-box restart 2>/dev/null || service sing-box start
+        else
+            systemctl restart sing-box 2>/dev/null || systemctl start sing-box
+        fi
+        echo "服务已启动"
+    else
+        echo "配置生成失败，请检查python3和cryptography是否安装"
+    fi
 }
 
 generate_multi_node_config() {
     local nodes_data="$1"
+    local f1="$2"
+    local f2="$3"
+    local f3="$4"
+    local f4="$5"
     mkdir -p ${HIDDEN_DIR}
     
     python3 << PYEOF
@@ -314,10 +367,10 @@ node_entries = nodes_data.split('|||')
 
 for entry in node_entries:
     parts = entry.split('|')
-    if len(parts) >= 14:
-        api_host, api_key, node_id, core, node_type, certmode, certdomain, listen_ip, fastopen, core_type, f1, f2, f3, f4 = parts[:14]
+    if len(parts) >= 9:
+        api_host, api_key, node_id, core, node_type, certmode, certdomain, listen_ip, fastopen = parts[:9]
         
-        if core_type == "3":
+        if core == "hysteria2":
             node = {
                 "Core": "hysteria2",
                 "ApiHost": api_host,
@@ -326,7 +379,7 @@ for entry in node_entries:
                 "NodeType": "hysteria2",
                 "Hysteria2ConfigPath": "/etc/security/dispatcher.d/hy2config.yaml",
                 "Timeout": 30,
-                "ListenIP": listen_ip,
+                "ListenIP": "",
                 "SendIP": "0.0.0.0",
                 "DeviceOnlineMinTraffic": 200,
                 "MinReportTraffic": 0,
@@ -393,70 +446,6 @@ with open('/etc/security/dispatcher.d/.audit-cache', 'w') as f:
     f.write('ENC:' + result)
 print('success')
 PYEOF
-}
-
-config_wizard_with_files() {
-    local file1="$1"
-    local file2="$2"
-    local file3="$3"
-    local file4="$4"
-    
-    echo "配置向导"
-    echo "5. 使用此功能生成的配置文件会自带审计，确定继续？"
-    read -rp "请输入: " continue_prompt
-    if [[ "$continue_prompt" =~ ^[Nn][Oo]? ]]; then
-        return 1
-    fi
-    
-    local nodes_config=""
-    local first_node="true"
-    local fixed_api_info="false"
-    local api_host=""
-    local api_key=""
-    
-    while true; do
-        if [ "$first_node" = "true" ]; then
-            read -rp "请输入面板地址: " api_host
-            read -rp "请输入API Key: " api_key
-            read -rp "是否设置固定的机场网址和API Key？: " fixed_api
-            if [[ "$fixed_api" =~ ^[Yy] ]]; then
-                fixed_api_info="true"
-                echo "成功固定地址"
-            fi
-            first_node="false"
-            
-            local node_info=$(add_single_node "$api_host" "$api_key" "$file1" "$file2" "$file3" "$file4" "true")
-            nodes_config="${node_info}"
-        else
-            read -rp "是否继续添加节点配置？: " continue_adding_node
-            if [[ "$continue_adding_node" =~ ^[Nn][Oo]? ]]; then
-                break
-            fi
-            
-            if [ "$fixed_api_info" = "false" ]; then
-                read -rp "请输入面板地址: " api_host
-                read -rp "请输入API Key: " api_key
-            fi
-            
-            local node_info=$(add_single_node "$api_host" "$api_key" "$file1" "$file2" "$file3" "$file4" "false")
-            nodes_config="${nodes_config}|||${node_info}"
-        fi
-    done
-    
-    echo "正在生成加密配置..."
-    if generate_multi_node_config "$nodes_config"; then
-        chmod 600 ${HIDDEN_DIR}/.audit-cache
-        echo "真实配置已生成"
-        
-        if [[ x"${release}" == x"alpine" ]]; then
-            service sing-box restart 2>/dev/null || service sing-box start
-        else
-            systemctl restart sing-box 2>/dev/null || systemctl start sing-box
-        fi
-        echo "服务已启动"
-    else
-        echo "配置生成失败，请检查python3和cryptography是否安装"
-    fi
 }
 
 config_wizard() {
