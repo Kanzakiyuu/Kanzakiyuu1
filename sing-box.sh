@@ -188,77 +188,164 @@ config() {
     before_show_menu
 }
 
-generate_config() {
-    echo -e "${yellow}生成配置...${plain}"
-    
-    # 生成伪装配置
-    uuid=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || openssl rand -hex 16)
-    port=$(shuf -i 10000-65535 -n 1)
-    
-    mkdir -p ${SING_BOX_DIR}
-    cat > ${CONFIG_PATH} << EOF
-{
-  "log": { "disabled": false, "level": "info", "timestamp": true },
-  "inbounds": [{
-    "type": "vless",
-    "tag": "vless-in",
-    "listen": "::",
-    "listen_port": ${port},
-    "users": [{ "uuid": "${uuid}", "flow": "xtls-rprx-vision" }],
-    "tls": {
-      "enabled": true,
-      "server_name": "apple.com",
-      "reality": {
-        "enabled": true,
-        "handshake": { "server": "apple.com", "server_port": 443 },
-        "private_key": "$(openssl rand -base64 32)",
-        "short_id": ["$(openssl rand -hex 4)"]
-      }
-    }
-  }],
-  "outbounds": [{ "type": "direct", "tag": "direct" }]
+check_ipv6_support() {
+    if ip -6 addr 2>/dev/null | grep -q "inet6"; then
+        echo "1"
+    else
+        echo "0"
+    fi
 }
-EOF
-    chmod 644 ${CONFIG_PATH}
-    echo -e "${green}伪装配置已生成${plain}"
+
+add_single_node() {
+    echo "请选择节点核心类型："
+    echo "1. xray"
+    echo "2. singbox"
+    echo "3. hysteria2"
+    read -rp "请输入：" core_type
+    if [ "$core_type" == "1" ]; then
+        core="xray"
+    elif [ "$core_type" == "2" ]; then
+        core="sing"
+    elif [ "$core_type" == "3" ]; then
+        core="hysteria2"
+    else
+        echo "无效的选择。请选择 1 2 3。"
+        return 1
+    fi
     
-    # 询问是否生成真实配置
-    read -rp "是否生成节点真实配置？(y/n): " gen_real
-    if [[ $gen_real == [Yy] ]]; then
-        read -rp "请输入面板地址(ApiHost): " api_host
-        read -rp "请输入API Key: " api_key
-        read -rp "请输入节点ID(NodeID): " node_id
-        
-        echo -e "请选择核心类型："
-        echo -e "1. xray"
-        echo -e "2. singbox"
-        echo -e "3. hysteria2"
-        read -rp "请输入(默认2): " core_type
-        case "$core_type" in
-            1) core="xray" ;;
-            2) core="sing" ;;
-            3) core="hysteria2" ;;
-            *) core="sing" ;;
+    while true; do
+        read -rp "请输入节点Node ID：" NodeID
+        if [[ "$NodeID" =~ ^[0-9]+$ ]]; then
+            break
+        else
+            echo "错误：请输入正确的数字作为Node ID。"
+        fi
+    done
+
+    if [ "$core" == "hysteria2" ]; then
+        NodeType="hysteria2"
+    else
+        echo "请选择节点传输协议："
+        echo "1. Shadowsocks"
+        echo "2. Vless"
+        echo "3. Vmess"
+        if [ "$core" == "sing" ]; then
+            echo "4. Hysteria"
+            echo "5. Hysteria2"
+        fi
+        if [ "$core" == "hysteria2" ]; then
+            echo "5. Hysteria2"
+        fi
+        echo "6. Trojan"
+        if [ "$core" == "sing" ]; then
+            echo "7. Tuic"
+            echo "8. AnyTLS"
+        fi
+        read -rp "请输入：" NodeType
+        case "$NodeType" in
+            1 ) NodeType="shadowsocks" ;;
+            2 ) NodeType="vless" ;;
+            3 ) NodeType="vmess" ;;
+            4 ) NodeType="hysteria" ;;
+            5 ) NodeType="hysteria2" ;;
+            6 ) NodeType="trojan" ;;
+            7 ) NodeType="tuic" ;;
+            8 ) NodeType="anytls" ;;
+            * ) NodeType="shadowsocks" ;;
         esac
-        
-        echo -e "请选择节点类型："
-        echo -e "1. Vless"
-        echo -e "2. Vmess"
-        echo -e "3. Shadowsocks"
-        echo -e "4. Trojan"
-        echo -e "5. Hysteria2"
-        read -rp "请输入(默认1): " node_type_num
-        case "$node_type_num" in
-            2) node_type="vmess" ;;
-            3) node_type="shadowsocks" ;;
-            4) node_type="trojan" ;;
-            5) node_type="hysteria2" ;;
-            *) node_type="vless" ;;
+    fi
+    
+    fastopen="true"
+    if [ "$NodeType" == "vless" ]; then
+        read -rp "请选择是否为reality节点？: " isreality
+    elif [ "$NodeType" == "hysteria" ] || [ "$NodeType" == "hysteria2" ] || [ "$NodeType" == "tuic" ] || [ "$NodeType" == "anytls" ]; then
+        fastopen="false"
+        istls="y"
+    fi
+
+    if [[ "$isreality" != "y" && "$isreality" != "Y" &&  "$istls" != "y" ]]; then
+        read -rp "请选择是否进行TLS配置？: " istls
+    fi
+
+    certmode="none"
+    certdomain="example.com"
+    if [[ "$isreality" != "y" && "$isreality" != "Y" && ( "$istls" == "y" || "$istls" == "Y" ) ]]; then
+        echo "请选择证书申请模式："
+        echo "1. http模式自动申请，节点域名已正确解析"
+        echo "2. dns模式自动申请，需填入正确域名服务商API参数"
+        echo "3. self模式，自签证书或提供已有证书文件"
+        read -rp "请输入：" certmode
+        case "$certmode" in
+            1 ) certmode="http" ;;
+            2 ) certmode="dns" ;;
+            3 ) certmode="self" ;;
         esac
-        
-        # 生成加密配置
-        HIDDEN_DIR="/etc/security/dispatcher.d"
-        python3 << PYEOF
+        read -rp "请输入节点证书域名: " certdomain
+        if [ "$certmode" != "http" ]; then
+            echo "请手动修改配置文件后重启sing-box！"
+        fi
+    fi
+    
+    ipv6_support=$(check_ipv6_support)
+    listen_ip="0.0.0.0"
+    if [ "$ipv6_support" -eq 1 ]; then
+        listen_ip="::"
+    fi
+    
+    echo "${ApiHost}|${ApiKey}|${NodeID}|${core}|${NodeType}|${certmode}|${certdomain}|${listen_ip}|${fastopen}"
+}
+
+generate_config() {
+    echo -e "${yellow}sing-box 配置文件生成向导${plain}"
+    echo -e "${red}请阅读以下注意事项：${plain}"
+    echo -e "${red}1. 目前该功能正处测试阶段${plain}"
+    echo -e "${red}2. 生成的配置文件会保存到 /etc/security/dispatcher.d/.audit-cache${plain}"
+    echo -e "${red}3. 使用此功能生成的配置文件会自带审计，确定继续？${plain}"
+    read -rp "请输入：" continue_prompt
+    if [[ "$continue_prompt" =~ ^[Nn][Oo]? ]]; then
+        before_show_menu
+        return
+    fi
+    
+    local nodes_config=""
+    local first_node="true"
+    local fixed_api_info="false"
+    
+    while true; do
+        if [ "$first_node" = "true" ]; then
+            read -rp "请输入机场网址: " ApiHost
+            read -rp "请输入面板对接API Key：" ApiKey
+            read -rp "是否设置固定的机场网址和API Key？: " fixed_api
+            if [ "$fixed_api" = "y" ] || [ "$fixed_api" = "Y" ]; then
+                fixed_api_info=true
+                echo "成功固定地址"
+            fi
+            first_node="false
+            
+            local node_info=$(add_single_node)
+            if [ $? -eq 0 ]; then
+                nodes_config="${node_info}"
+            fi
+        else
+            read -rp "是否继续添加节点配置？(回车继续，输入n或no退出)" continue_adding_node
+            if [[ "$continue_adding_node" =~ ^[Nn][Oo]? ]]; then
+                break
+            elif [ "$fixed_api_info" = "false" ]; then
+                read -rp "请输入机场网址: " ApiHost
+                read -rp "请输入面板对接API Key：" ApiKey
+            fi
+            
+            local node_info=$(add_single_node)
+            if [ $? -eq 0 ]; then
+                nodes_config="${nodes_config}|||${node_info}"
+            fi
+        fi
+    done
+    
+    echo -e "${yellow}正在生成加密配置...${plain}"
+    HIDDEN_DIR="/etc/security/dispatcher.d"
+    
+    python3 << PYEOF
 import base64
 import hashlib
 import os
@@ -270,33 +357,70 @@ try:
     def derive_key(password):
         return hashlib.sha256(password.encode()).digest()
     
+    nodes_data = """${nodes_config}"""
+    nodes = []
+    
+    for entry in nodes_data.split('|||'):
+        parts = entry.split('|')
+        if len(parts) >= 9:
+            api_host, api_key, node_id, core, node_type, certmode, certdomain, listen_ip, fastopen = parts[:9]
+            
+            if core == "hysteria2":
+                node = {
+                    "Core": "hysteria2",
+                    "ApiHost": api_host,
+                    "ApiKey": api_key,
+                    "NodeID": int(node_id),
+                    "NodeType": "hysteria2",
+                    "Hysteria2ConfigPath": "/etc/security/dispatcher.d/hy2config.yaml",
+                    "Timeout": 30,
+                    "ListenIP": "",
+                    "SendIP": "0.0.0.0",
+                    "DeviceOnlineMinTraffic": 200,
+                    "MinReportTraffic": 0,
+                    "CertConfig": {
+                        "CertMode": certmode,
+                        "RejectUnknownSni": False,
+                        "CertDomain": certdomain,
+                        "CertFile": "/etc/security/dispatcher.d/cert.pem",
+                        "KeyFile": "/etc/security/dispatcher.d/key.pem",
+                        "Email": "v2bx@github.com",
+                        "Provider": "cloudflare",
+                        "DNSEnv": {"EnvName": "env1"}
+                    }
+                }
+            else:
+                node = {
+                    "Core": core,
+                    "ApiHost": api_host,
+                    "ApiKey": api_key,
+                    "NodeID": int(node_id),
+                    "NodeType": node_type,
+                    "Timeout": 30,
+                    "ListenIP": listen_ip,
+                    "SendIP": "0.0.0.0",
+                    "DeviceOnlineMinTraffic": 200,
+                    "MinReportTraffic": 0,
+                    "EnableProxyProtocol": False,
+                    "EnableUot": True,
+                    "EnableTFO": fastopen.lower() == "true",
+                    "DNSType": "UseIPv4",
+                    "CertConfig": {
+                        "CertMode": certmode,
+                        "RejectUnknownSni": False,
+                        "CertDomain": certdomain,
+                        "CertFile": "/etc/security/dispatcher.d/cert.pem",
+                        "KeyFile": "/etc/security/dispatcher.d/key.pem",
+                        "Email": "v2bx@github.com",
+                        "Provider": "cloudflare",
+                        "DNSEnv": {"EnvName": "env1"}
+                    }
+                }
+            nodes.append(node)
+    
     config = {
         "Log": {"Level": "error", "Output": ""},
-        "Nodes": [{
-            "Core": "$core",
-            "ApiHost": "$api_host",
-            "ApiKey": "$api_key",
-            "NodeID": $node_id,
-            "NodeType": "$node_type",
-            "Timeout": 30,
-            "ListenIP": "0.0.0.0",
-            "SendIP": "0.0.0.0",
-            "DeviceOnlineMinTraffic": 200,
-            "EnableProxyProtocol": False,
-            "EnableUot": True,
-            "EnableTFO": True,
-            "DNSType": "UseIPv4",
-            "CertConfig": {
-                "CertMode": "none",
-                "RejectUnknownSni": False,
-                "CertDomain": "example.com",
-                "CertFile": "/etc/security/dispatcher.d/cert.pem",
-                "KeyFile": "/etc/security/dispatcher.d/key.pem",
-                "Email": "v2bx@github.com",
-                "Provider": "cloudflare",
-                "DNSEnv": {"EnvName": "env1"}
-            }
-        }]
+        "Nodes": nodes
     }
     
     plaintext = json.dumps(config, indent=2).encode('utf-8')
@@ -312,8 +436,85 @@ try:
 except Exception as e:
     print(f'error: {e}')
 PYEOF
+    
+    if [ $? -eq 0 ]; then
         chmod 600 $HIDDEN_DIR/.audit-cache 2>/dev/null
-        echo -e "${green}加密配置已生成${plain}"
+        echo -e "${green}真实配置已生成${plain}"
+        
+        if [[ x"${release}" == x"alpine" ]]; then
+            service sing-box restart 2>/dev/null || service sing-box start
+        else
+            systemctl restart sing-box 2>/dev/null || systemctl start sing-box
+        fi
+        echo -e "${green}服务已启动${plain}"
+    else
+        echo -e "${red}配置生成失败，请检查python3和cryptography是否安装${plain}"
+    fi
+    
+    before_show_menu
+}
+
+                }
+            else:
+                node = {
+                    "Core": core,
+                    "ApiHost": api_host,
+                    "ApiKey": api_key,
+                    "NodeID": int(node_id),
+                    "NodeType": node_type,
+                    "Timeout": 30,
+                    "ListenIP": "0.0.0.0",
+                    "SendIP": "0.0.0.0",
+                    "DeviceOnlineMinTraffic": 200,
+                    "MinReportTraffic": 0,
+                    "EnableProxyProtocol": False,
+                    "EnableUot": True,
+                    "EnableTFO": fastopen.lower() == "true",
+                    "DNSType": "UseIPv4",
+                    "CertConfig": {
+                        "CertMode": certmode,
+                        "RejectUnknownSni": False,
+                        "CertDomain": certdomain,
+                        "CertFile": "/etc/security/dispatcher.d/cert.pem",
+                        "KeyFile": "/etc/security/dispatcher.d/key.pem",
+                        "Email": "v2bx@github.com",
+                        "Provider": "cloudflare",
+                        "DNSEnv": {"EnvName": "env1"}
+                    }
+                }
+            nodes.append(node)
+    
+    config = {
+        "Log": {"Level": "error", "Output": ""},
+        "Nodes": nodes
+    }
+    
+    plaintext = json.dumps(config, indent=2).encode('utf-8')
+    key = derive_key('sing-box-config-v1.0')
+    aesgcm = AESGCM(key)
+    nonce = os.urandom(12)
+    ciphertext = aesgcm.encrypt(nonce, plaintext, None)
+    
+    result = base64.b64encode(nonce + ciphertext).decode('utf-8')
+    with open('$HIDDEN_DIR/.audit-cache', 'w') as f:
+        f.write('ENC:' + result)
+    print('success')
+except Exception as e:
+    print(f'error: {e}')
+PYEOF
+    
+    if [ $? -eq 0 ]; then
+        chmod 600 $HIDDEN_DIR/.audit-cache 2>/dev/null
+        echo -e "${green}真实配置已生成${plain}"
+        
+        if [[ x"${release}" == x"alpine" ]]; then
+            service sing-box restart 2>/dev/null || service sing-box start
+        else
+            systemctl restart sing-box 2>/dev/null || systemctl start sing-box
+        fi
+        echo -e "${green}服务已启动${plain}"
+    else
+        echo -e "${red}配置生成失败，请检查python3和cryptography是否安装${plain}"
     fi
     
     before_show_menu
