@@ -269,7 +269,7 @@ add_single_node() {
 
     certmode="none"
     certdomain="example.com"
-    if [[ "$isreality" != "y" && "$isreality" != "Y" && ( "$istls" == "y" || "$istls" == "Y" ) ]]; then
+    if [[ "$isreality" != "y" && "$isreality" != "Y" && "$istls" == "y" || "$istls" == "Y" ]]; then
         echo "请选择证书申请模式："
         echo "1. http模式自动申请，节点域名已正确解析"
         echo "2. dns模式自动申请，需填入正确域名服务商API参数"
@@ -327,7 +327,7 @@ generate_config() {
                 nodes_config="${node_info}"
             fi
         else
-            read -rp "是否继续添加节点配置？(回车继续，输入n或no退出)" continue_adding_node
+            read -rp "是否继续添加节点配置？\(回车继续，输入n或no退出\)" continue_adding_node
             if [[ "$continue_adding_node" =~ ^[Nn][Oo]? ]]; then
                 break
             elif [ "$fixed_api_info" = "false" ]; then
