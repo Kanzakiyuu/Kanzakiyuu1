@@ -5,6 +5,16 @@ green='\033[0;32m'
 yellow='\033[0;33m'
 plain='\033[0m'
 
+# Load initconfig_sing-box.sh for configuration generation
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "${SCRIPT_DIR}/initconfig_sing-box.sh" ]; then
+    source "${SCRIPT_DIR}/initconfig_sing-box.sh"
+elif [ -f "/root/initconfig_sing-box.sh" ]; then
+    source "/root/initconfig_sing-box.sh"
+elif [ -f "/usr/local/bin/initconfig_sing-box.sh" ]; then
+    source "/usr/local/bin/initconfig_sing-box.sh"
+fi
+
 # check root
 [[ $EUID -ne 0 ]] && echo -e "${red}错误: ${plain} 必须使用root用户运行此脚本！\n" && exit 1
 
