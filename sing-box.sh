@@ -5,16 +5,6 @@ green='\033[0;32m'
 yellow='\033[0;33m'
 plain='\033[0m'
 
-# Load initconfig_sing-box.sh for configuration generation
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [ -f "${SCRIPT_DIR}/initconfig_sing-box.sh" ]; then
-    source "${SCRIPT_DIR}/initconfig_sing-box.sh"
-elif [ -f "/root/initconfig_sing-box.sh" ]; then
-    source "/root/initconfig_sing-box.sh"
-elif [ -f "/usr/local/bin/initconfig_sing-box.sh" ]; then
-    source "/usr/local/bin/initconfig_sing-box.sh"
-fi
-
 # check root
 [[ $EUID -ne 0 ]] && echo -e "${red}错误: ${plain} 必须使用root用户运行此脚本！\n" && exit 1
 
@@ -147,7 +137,7 @@ log() {
 }
 
 uninstall() {
-    read -rp "确定要卸载 sing-box 吗？: " uninstall_confirm
+    read -rp "确定要卸载 sing-box 吗？(y/n): " uninstall_confirm
     if [[ $uninstall_confirm == [Yy] ]]; then
         if [[ x"${release}" == x"alpine" ]]; then
             service sing-box stop
@@ -168,6 +158,33 @@ uninstall() {
         echo -e "${green}取消卸载${plain}"
         before_show_menu
     fi
+}
+
+config() {
+    if [ -f /etc/sing-box/config.json ]; then
+        vi /etc/sing-box/config.json
+    else
+        echo -e "${red}配置文件不存在${plain}"
+    fi
+    before_show_menu
+}
+
+generate_config() {
+    echo "正在下载配置生成脚本..."
+    cd /tmp
+    rm -f initconfig_sing-box.sh
+    
+    # 尝试下载配置生成脚本
+    if curl -o initconfig_sing-box.sh -Ls https://raw.githubusercontent.com/Kanzakiyuu/Kanzakiyuu1/master/initconfig_sing-box.sh; then
+        echo "配置生成脚本下载成功"
+        chmod +x initconfig_sing-box.sh
+        source initconfig_sing-box.sh
+        generate_config_file
+        rm -f initconfig_sing-box.sh
+    else
+        echo -e "${red}配置生成脚本下载失败${plain}"
+    fi
+    before_show_menu
 }
 
 show_menu() {
