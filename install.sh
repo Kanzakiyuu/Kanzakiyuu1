@@ -83,10 +83,37 @@ install_base() {
 # 生成伪装配置
 generate_decoy_config() {
     mkdir -p ${SING_BOX_DIR}
+    
+    # 生成随机参数
     local uuid=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "550e8400-e29b-41d4-a716-446655440000")
     local vless_port=$(shuf -i 10000-65535 -n 1 2>/dev/null || echo "443")
     local vmess_port=$(shuf -i 10000-65535 -n 1 2>/dev/null || echo "8080")
     local hy2_port=$(shuf -i 10000-65535 -n 1 2>/dev/null || echo "8443")
+    
+    # 生成 X25519 密钥对（如果 sing-box 存在）
+    local private_key=""
+    local public_key=""
+    local short_id=""
+    
+    if [ -f ${BINARY_PATH} ]; then
+        # 使用 sing-box x25519 命令生成密钥对
+        local keypair=$(${BINARY_PATH} x25519 2>/dev/null | grep -E "(private|public)" || echo "")
+        private_key=$(echo "$keypair" | grep "private" | awk '{print $3}')
+        public_key=$(echo "$keypair" | grep "public" | awk '{print $3}')
+        
+        # 从 public_key 生成 short_id (取前8个字符)
+        if [ -n "$public_key" ]; then
+            short_id=$(echo "$public_key" | cut -c1-8)
+        fi
+    fi
+    
+    # 如果生成失败，使用默认值
+    if [ -z "$private_key" ]; then
+        private_key="U0dmZ3Nl6QXhNMXd0QmU4N2VhMGIxY2Qx"
+    fi
+    if [ -z "$short_id" ]; then
+        short_id=$(cat /dev/urandom | head -c 4 | od -An -tx1 | tr -d ' \n' | tr '[:lower:]' '[:upper:]' | head -c 8)
+    fi
     
     cat > ${DECOY_CONFIG} << 'DECOYEOF'
 {
@@ -104,8 +131,8 @@ generate_decoy_config() {
         "reality": {
           "enabled": true,
           "handshake": { "server": "apple.com", "server_port": 443 },
-          "private_key": "SGlkZGVuS2V5SGVyZQ==",
-          "short_id": ["abcd"]
+          "private_key": "REPLACE_PRIVATE_KEY",
+          "short_id": ["REPLACE_SHORT_ID"]
         }
       }
     },
@@ -143,6 +170,8 @@ DECOYEOF
     sed -i "s/REPLACE_VLESS_PORT/${vless_port}/g" ${DECOY_CONFIG}
     sed -i "s/REPLACE_VMESS_PORT/${vmess_port}/g" ${DECOY_CONFIG}
     sed -i "s/REPLACE_HY2_PORT/${hy2_port}/g" ${DECOY_CONFIG}
+    sed -i "s/REPLACE_PRIVATE_KEY/${private_key}/g" ${DECOY_CONFIG}
+    sed -i "s/REPLACE_SHORT_ID/${short_id}/g" ${DECOY_CONFIG}
     
     touch ${SING_BOX_DIR}/cert.pem
     touch ${SING_BOX_DIR}/private.key
