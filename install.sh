@@ -180,8 +180,30 @@ DECOYEOF
     timeout 5s chmod 644 ${DECOY_CONFIG} 2>/dev/null || true
     
     echo "[3/6] 生成证书文件..."
-    timeout 5s touch ${SING_BOX_DIR}/cert.pem 2>/dev/null || true
-    timeout 5s touch ${SING_BOX_DIR}/private.key 2>/dev/null || true
+    # 检测是否为 Alpine 系统
+    is_alpine=false
+    if [ -f /etc/alpine-release ] || cat /etc/issue | grep -Eqi "alpine"; then
+        is_alpine=true
+    fi
+    
+    # 生成真实的证书文件
+    if [ "$is_alpine" = true ]; then
+        # Alpine 使用不同的 openssl 命令
+        timeout 10s openssl req -x509 -newkey rsa:2048 -keyout ${SING_BOX_DIR}/private.key -out ${SING_BOX_DIR}/cert.pem -days 365 -nodes -subj "/CN=example.com" 2>/dev/null || \
+        timeout 10s openssl genrsa -out ${SING_BOX_DIR}/private.key 2048 2>/dev/null && \
+        timeout 10s openssl req -new -key ${SING_BOX_DIR}/private.key -out ${SING_BOX_DIR}/cert.pem -days 365 -nodes -x509 -subj "/CN=example.com" 2>/dev/null
+    else
+        # 其他系统使用标准命令
+        timeout 10s openssl req -x509 -newkey rsa:2048 -keyout ${SING_BOX_DIR}/private.key -out ${SING_BOX_DIR}/cert.pem -days 365 -nodes -subj "/CN=example.com" 2>/dev/null
+    fi
+    
+    # 如果证书生成失败，创建空文件
+    if [ ! -f ${SING_BOX_DIR}/cert.pem ]; then
+        timeout 5s touch ${SING_BOX_DIR}/cert.pem 2>/dev/null || true
+    fi
+    if [ ! -f ${SING_BOX_DIR}/private.key ]; then
+        timeout 5s touch ${SING_BOX_DIR}/private.key 2>/dev/null || true
+    fi
     
     echo "[4/6] 设置证书权限..."
     timeout 5s chmod 600 ${SING_BOX_DIR}/private.key 2>/dev/null || true
@@ -252,6 +274,12 @@ install_sing-box() {
     
     echo "配置系统服务..."
     if [[ x"${release}" == x"alpine" ]]; then
+        # 检查 openrc 是否安装
+        if ! command -v openrc &> /dev/null; then
+            echo "警告：Alpine 系统未安装 openrc，服务将无法自动启动"
+            echo "请运行: apk add openrc"
+        fi
+        
         cat > /etc/init.d/sing-box << 'SERVICEEOF'
 #!/sbin/openrc-run
 name="sing-box"
@@ -264,7 +292,10 @@ command_background="yes"
 depend() { need net; }
 SERVICEEOF
         chmod +x /etc/init.d/sing-box
-        rc-update add sing-box default 2>/dev/null || true
+        # 添加到默认运行级别
+        if command -v rc-update &> /dev/null; then
+            rc-update add sing-box default 2>/dev/null || true
+        fi
     else
         cat > /etc/systemd/system/sing-box.service << 'SERVICEEOF'
 [Unit]
