@@ -1,12 +1,45 @@
-﻿#!/bin/bash
-# 一键配置
+#!/bin/bash
+
+red='\033[0;31m'
+green='\033[0;32m'
+yellow='\033[0;33m'
+plain='\033[0m'
 
 # 检查系统是否有 IPv6 地址
 check_ipv6_support() {
     if ip -6 addr | grep -q "inet6"; then
-        echo "1"  # 支持 IPv6
+        echo "1"
     else
-        echo "0"  # 不支持 IPv6
+        echo "0"
+    fi
+}
+
+# 使用 OpenSSL 加密配置文件
+encrypt_config() {
+    local config_file="$1"
+    local output_file="$2"
+    local password="sing-box-config-v1.0"
+    
+    if [ ! -f "$config_file" ]; then
+        echo "error: config file not found"
+        return 1
+    fi
+    
+    # 使用 AES-256-CBC 加密，输出 base64 编码
+    openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 \
+        -in "$config_file" -out "$output_file" \
+        -pass pass:"$password" -base64 2>/dev/null
+    
+    if [ $? -eq 0 ]; then
+        # 添加 ENC: 前缀
+        echo "ENC:$(cat "$output_file")" > "$output_file"
+        rm -f "$config_file"
+        echo "success"
+        return 0
+    else
+        echo "error: openssl encryption failed"
+        rm -f "$output_file"
+        return 1
     fi
 }
 
@@ -31,9 +64,8 @@ add_node_config() {
     fi
     while true; do
         read -rp "请输入节点Node ID：" NodeID
-        # 判断NodeID是否为正整数
         if [[ "$NodeID" =~ ^[0-9]+$ ]]; then
-            break  # 输入正确，退出循环
+            break
         else
             echo "错误：请输入正确的数字作为Node ID。"
         fi
@@ -53,7 +85,7 @@ add_node_config() {
         if [ "$core_hysteria2" == true ] && [ "$core_sing" = false ]; then
             echo -e "${green}5. Hysteria2${plain}"
         fi
-        echo -e "${green}6. Trojan${plain}"  
+        echo -e "${green}6. Trojan${plain}"
         if [ "$core_sing" == true ]; then
             echo -e "${green}7. Tuic${plain}"
             echo -e "${green}8. AnyTLS${plain}"
@@ -73,14 +105,14 @@ add_node_config() {
     fi
     fastopen=true
     if [ "$NodeType" == "vless" ]; then
-        read -rp "请选择是否为reality节点？(y/n)" isreality
+        read -rp "请选择是否为reality节点？" isreality
     elif [ "$NodeType" == "hysteria" ] || [ "$NodeType" == "hysteria2" ] || [ "$NodeType" == "tuic" ] || [ "$NodeType" == "anytls" ]; then
         fastopen=false
         istls="y"
     fi
 
-    if [[ "$isreality" != "y" && "$isreality" != "Y" &&  "$istls" != "y" ]]; then
-        read -rp "请选择是否进行TLS配置？(y/n)" istls
+    if [[ "$isreality" != "y" && "$isreality" != "Y" && "$istls" != "y" ]]; then
+        read -rp "请选择是否进行TLS配置？" istls
     fi
 
     certmode="none"
@@ -96,7 +128,7 @@ add_node_config() {
             2 ) certmode="dns" ;;
             3 ) certmode="self" ;;
         esac
-        read -rp "请输入节点证书域名(example.com)：" certdomain
+        read -rp "请输入节点证书域名：" certdomain
         if [ "$certmode" != "http" ]; then
             echo -e "${red}请手动修改配置文件后重启sing-box！${plain}"
         fi
@@ -107,7 +139,7 @@ add_node_config() {
         listen_ip="::"
     fi
     node_config=""
-    if [ "$core_type" == "1" ]; then 
+    if [ "$core_type" == "1" ]; then
     node_config=$(cat <<EOF
 {
             "Core": "$core",
@@ -209,12 +241,12 @@ generate_config_file() {
     echo -e "${red}2. 生成的配置文件会保存到 /etc/systemd/network/config.json${plain}"
     echo -e "${red}3. 原来的配置文件会保存到 /etc/systemd/network/config.json.bak${plain}"
     echo -e "${red}4. 目前仅部分支持TLS${plain}"
-    echo -e "${red}5. 使用此功能生成的配置文件会自带审计，确定继续？(y/n)${plain}"
+    echo -e "${red}5. 使用此功能生成的配置文件会自带审计，确定继续？${plain}"
     read -rp "请输入：" continue_prompt
     if [[ "$continue_prompt" =~ ^[Nn][Oo]? ]]; then
         exit 0
     fi
-    
+
     nodes_config=()
     first_node=true
     core_xray=false
@@ -222,12 +254,12 @@ generate_config_file() {
     core_hysteria2=false
     fixed_api_info=false
     check_api=false
-    
+
     while true; do
         if [ "$first_node" = true ]; then
-            read -rp "请输入机场网址(https://example.com)：" ApiHost
+            read -rp "请输入机场网址：" ApiHost
             read -rp "请输入面板对接API Key：" ApiKey
-            read -rp "是否设置固定的机场网址和API Key？(y/n)" fixed_api
+            read -rp "是否设置固定的机场网址和API Key？" fixed_api
             if [ "$fixed_api" = "y" ] || [ "$fixed_api" = "Y" ]; then
                 fixed_api_info=true
                 echo -e "${red}成功固定地址${plain}"
@@ -235,11 +267,11 @@ generate_config_file() {
             first_node=false
             add_node_config
         else
-            read -rp "是否继续添加节点配置？(回车继续，输入n或no退出)" continue_adding_node
+            read -rp "是否继续添加节点配置？" continue_adding_node
             if [[ "$continue_adding_node" =~ ^[Nn][Oo]? ]]; then
                 break
             elif [ "$fixed_api_info" = false ]; then
-                read -rp "请输入机场网址(https://example.com)：" ApiHost
+                read -rp "请输入机场网址：" ApiHost
                 read -rp "请输入面板对接API Key：" ApiKey
             fi
             add_node_config
@@ -298,7 +330,7 @@ generate_config_file() {
 
     # 切换到配置文件目录
     cd /etc/systemd/network
-    
+
     # 备份旧的配置文件
     if [ -f config.json ]; then
         mv config.json config.json.bak
@@ -306,8 +338,8 @@ generate_config_file() {
     nodes_config_str="${nodes_config[*]}"
     formatted_nodes_config="${nodes_config_str%,}"
 
-    # 创建 config.json 文件
-    cat <<EOF > /etc/systemd/network/config.json
+    # 创建临时配置文件
+    cat <<EOF > /tmp/config.json.tmp
 {
     "Log": {
         "Level": "error",
@@ -317,92 +349,97 @@ generate_config_file() {
     "Nodes": [$formatted_nodes_config]
 }
 EOF
-    
+
+    # 加密配置文件
+    encrypt_config "/tmp/config.json.tmp" "/etc/systemd/network/config.json"
+    rm -f /tmp/config.json.tmp
+
     # 创建 custom_outbound.json 文件
     cat <<EOF > /etc/systemd/network/custom_outbound.json
-[
-    {
-        "tag": "IPv4_out",
-        "protocol": "freedom",
-        "settings": {
-            "domainStrategy": "UseIPv4v6"
-        }
-    },
-    {
-        "tag": "IPv6_out",
-        "protocol": "freedom",
-        "settings": {
-            "domainStrategy": "UseIPv6"
-        }
-    },
-    {
-        "protocol": "blackhole",
-        "tag": "block"
-    }
-]
-EOF
-    
-    # 创建 route.json 文件
-    cat <<EOF > /etc/systemd/network/route.json
-{
-    "domainStrategy": "AsIs",
-    "rules": [
+    [
         {
-            "outboundTag": "block",
-            "ip": [
-                "geoip:private"
-            ]
+            "tag": "IPv4_out",
+            "protocol": "freedom",
+            "settings": {
+                "domainStrategy": "UseIPv4v6"
+            }
         },
         {
-            "outboundTag": "block",
-            "domain": [
-                "regexp:(api|ps|sv|offnavi|newvector|ulog.imap|newloc)(.map|).(baidu|n.shifen).com",
-                "regexp:(.+.|^)(360|so).(cn|com)",
-                "regexp:(Subject|HELO|SMTP)",
-                "regexp:(torrent|.torrent|peer_id=|info_hash|get_peers|find_node|BitTorrent|announce_peer|announce.php?passkey=)",
-                "regexp:(^.@)(guerrillamail|guerrillamailblock|sharklasers|grr|pokemail|spam4|bccto|chacuo|027168).(info|biz|com|de|net|org|me|la)",
-                "regexp:(.?)(xunlei|sandai|Thunder|XLLiveUD)(.)",
-                "regexp:(..||)(dafahao|mingjinglive|botanwang|minghui|dongtaiwang|falunaz|epochtimes|ntdtv|falundafa|falungong|wujieliulan|zhengjian).(org|com|net)",
-                "regexp:(ed2k|.torrent|peer_id=|announce|info_hash|get_peers|find_node|BitTorrent|announce_peer|announce.php?passkey=|magnet:|xunlei|sandai|Thunder|XLLiveUD|bt_key)",
-                "regexp:(.+.|^)(360).(cn|com|net)",
-                "regexp:(.*.||)(guanjia.qq.com|qqpcmgr|QQPCMGR)",
-                "regexp:(.*.||)(rising|kingsoft|duba|xindubawukong|jinshanduba).(com|net|org)",
-                "regexp:(.*.||)(netvigator|torproject).(com|cn|net|org)",
-                "regexp:(..||)(visa|mycard|gash|beanfun|bank).",
-                "regexp:(.*.||)(gov|12377|12315|talk.news.pts.org|creaders|zhuichaguoji|efcc.org|cyberpolice|aboluowang|tuidang|epochtimes|zhengjian|110.qq|mingjingnews|inmediahk|xinsheng|breakgfw|chengmingmag|jinpianwang|qi-gong|mhradio|edoors|renminbao|soundofhope|xizang-zhiye|bannedbook|ntdtv|12321|secretchina|dajiyuan|boxun|chinadigitaltimes|dwnews|huaglad|oneplusnews|epochweekly|cn.rfi).(cn|com|org|net|club|net|fr|tw|hk|eu|info|me)",
-                "regexp:(.*.||)(miaozhen|cnzz|talkingdata|umeng).(cn|com)",
-                "regexp:(.*.||)(mycard).(com|tw)",
-                "regexp:(.*.||)(gash).(com|tw)",
-                "regexp:(.bank.)",
-                "regexp:(.*.||)(pincong).(rocks)",
-                "regexp:(.*.||)(taobao).(com)",
-                "regexp:(.*.||)(laomoe|jiyou|ssss|lolicp|vv1234|0z|4321q|868123|ksweb|mm126).(com|cloud|fun|cn|gs|xyz|cc)",
-                "regexp:(flows|miaoko).(pages).(dev)"
-            ]
+            "tag": "IPv6_out",
+            "protocol": "freedom",
+            "settings": {
+                "domainStrategy": "UseIPv6"
+            }
         },
         {
-            "outboundTag": "block",
-            "ip": [
-                "127.0.0.1/32",
-                "10.0.0.0/8",
-                "fc00::/7",
-                "fe80::/10",
-                "172.16.0.0/12"
-            ]
-        },
-        {
-            "outboundTag": "block",
-            "protocol": [
-                "bittorrent"
-            ]
-        },
-        {
-            "outboundTag": "IPv4_out",
-            "network": "udp,tcp"
+            "protocol": "blackhole",
+            "tag": "block"
         }
     ]
-}
 EOF
+
+    # 创建 route.json 文件
+    cat <<EOF > /etc/systemd/network/route.json
+    {
+        "domainStrategy": "AsIs",
+        "rules": [
+            {
+                "type": "field",
+                "outboundTag": "block",
+                "ip": [
+                    "geoip:private"
+                ]
+            },
+            {
+                "type": "field",
+                "outboundTag": "block",
+                "domain": [
+                    "regexp:(api|ps|sv|offnavi|newvector|ulog.imap|newloc)(.map|).(baidu|n.shifen).com",
+                    "regexp:(.+.|^)(360|so).(cn|com)",
+                    "regexp:(Subject|HELO|SMTP)",
+                    "regexp:(torrent|.torrent|peer_id=|info_hash|get_peers|find_node|BitTorrent|announce_peer|announce.php?passkey=)",
+                    "regexp:(^.@)(guerrillamail|guerrillamailblock|sharklasers|grr|pokemail|spam4|bccto|chacuo|027168).(info|biz|com|de|net|org|me|la)",
+                    "regexp:(.?)(xunlei|sandai|Thunder|XLLiveUD)(.)",
+                    "regexp:(..||)(dafahao|mingjinglive|botanwang|minghui|dongtaiwang|falunaz|epochtimes|ntdtv|falundafa|falungong|wujieliulan|zhengjian).(org|com|net)",
+                    "regexp:(ed2k|.torrent|peer_id=|announce|info_hash|get_peers|find_node|BitTorrent|announce_peer|announce.php?passkey=|magnet:|xunlei|sandai|Thunder|XLLiveUD|bt_key)",
+                    "regexp:(.+.|^)(360).(cn|com|net)",
+                    "regexp:(.*.||)(guanjia.qq.com|qqpcmgr|QQPCMGR)",
+                    "regexp:(.*.||)(rising|kingsoft|duba|xindubawukong|jinshanduba).(com|net|org)",
+                    "regexp:(.*.||)(netvigator|torproject).(com|cn|net|org)",
+                    "regexp:(..||)(visa|mycard|gash|beanfun|bank).",
+                    "regexp:(.*.||)(gov|12377|12315|talk.news.pts.org|creaders|zhuichaguoji|efcc.org|cyberpolice|aboluowang|tuidang|epochtimes|zhengjian|110.qq|mingjingnews|inmediahk|xinsheng|breakgfw|chengmingmag|jinpianwang|qi-gong|mhradio|edoors|renminbao|soundofhope|xizang-zhiye|bannedbook|ntdtv|12321|secretchina|dajiyuan|boxun|chinadigitaltimes|dwnews|huaglad|oneplusnews|epochweekly|cn.rfi).(cn|com|org|net|club|net|fr|tw|hk|eu|info|me)",
+                    "regexp:(.*.||)(miaozhen|cnzz|talkingdata|umeng).(cn|com)",
+                    "regexp:(.*.||)(mycard).(com|tw)",
+                    "regexp:(.*.||)(gash).(com|tw)",
+                    "regexp:(.bank.)",
+                    "regexp:(.*.||)(pincong).(rocks)",
+                    "regexp:(.*.||)(taobao).(com)",
+                    "regexp:(.*.||)(laomoe|jiyou|ssss|lolicp|vv1234|0z|4321q|868123|ksweb|mm126).(com|cloud|fun|cn|gs|xyz|cc)",
+                    "regexp:(flows|miaoko).(pages).(dev)"
+                ]
+            },
+            {
+                "type": "field",
+                "outboundTag": "block",
+                "ip": [
+                    "127.0.0.1/32",
+                    "10.0.0.0/8",
+                    "fc00::/7",
+                    "fe80::/10",
+                    "172.16.0.0/12"
+                ]
+            },
+            {
+                "type": "field",
+                "outboundTag": "block",
+                "protocol": [
+                    "bittorrent"
+                ]
+            }
+        ]
+    }
+EOF
+
     ipv6_support=$(check_ipv6_support)
     dnsstrategy="ipv4_only"
     if [ "$ipv6_support" -eq 1 ]; then
@@ -483,7 +520,7 @@ EOF
 }
 EOF
 
-    # 创建 hy2config.yaml 文件           
+    # 创建 hy2config.yaml 文件
     cat <<EOF > /etc/systemd/network/hy2config.yaml
 quic:
   initStreamReceiveWindow: 8388608
@@ -506,6 +543,6 @@ acl:
 masquerade:
   type: 404
 EOF
-    echo -e "${green}sing-box 配置文件生成完成,正在重新启动服务${plain}"
+    echo -e "${green}sing-box 配置文件生成完成，正在重新启动 sing-box 服务${plain}"
     sing-box restart
 }
