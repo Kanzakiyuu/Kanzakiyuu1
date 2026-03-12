@@ -78,9 +78,9 @@ start() {
         sleep 2
         check_status
         if [[ $? == 0 ]]; then
-            echo -e "${green}sing-box 启动成功，请使用 sing-box log 查看运行日志${plain}"
+            echo -e "${green}sing-box 启动成功${plain}"
         else
-            echo -e "${red}sing-box可能启动失败，请稍后使用 sing-box log 查看日志信息${plain}"
+            echo -e "${red}sing-box启动失败${plain}"
         fi
     fi
     before_show_menu
@@ -97,7 +97,7 @@ stop() {
     if [[ $? == 1 ]]; then
         echo -e "${green}sing-box 停止成功${plain}"
     else
-        echo -e "${red}sing-box停止失败，可能是因为停止时间超过了两秒，请稍后查看日志信息${plain}"
+        echo -e "${red}sing-box停止失败${plain}"
     fi
     before_show_menu
 }
@@ -111,9 +111,9 @@ restart() {
     sleep 2
     check_status
     if [[ $? == 0 ]]; then
-        echo -e "${green}sing-box 重启成功，请使用 sing-box log 查看运行日志${plain}"
+        echo -e "${green}sing-box 重启成功${plain}"
     else
-        echo -e "${red}sing-box可能启动失败，请稍后使用 sing-box log 查看日志信息${plain}"
+        echo -e "${red}sing-box启动失败${plain}"
     fi
     before_show_menu
 }
@@ -133,44 +133,6 @@ log() {
     else
         journalctl -u sing-box.service -e --no-pager -f
     fi
-    before_show_menu
-}
-
-version() {
-    echo -n "sing-box 版本："
-    /etc/sing-box/sing-box version
-    echo ""
-    before_show_menu
-}
-
-config() {
-    echo "sing-box在修改配置后会自动尝试重启"
-    vi /etc/sing-box/config.json
-    sleep 2
-    restart
-    check_status
-    case $? in
-        0)
-            echo -e "sing-box状态: ${green}已运行${plain}"
-            ;;
-        1)
-            echo -e "检测到您未启动sing-box或sing-box自动重启失败，是否查看日志？[Y/n]" && echo
-            read -e -rp "(默认: y):" yn
-            [[ -z ${yn} ]] && yn="y"
-            if [[ ${yn} == [Yy] ]]; then
-               log
-            fi
-            ;;
-        2)
-            echo -e "sing-box状态: ${red}未安装${plain}"
-    esac
-}
-
-generate_config() {
-    curl -o ./initconfig.sh -Ls https://raw.githubusercontent.com/Kanzakiyuu/Kanzakiyuu1/master/initconfig_sing-box.sh
-    source initconfig.sh
-    rm initconfig.sh -f
-    generate_config_file
     before_show_menu
 }
 
@@ -205,34 +167,29 @@ show_menu() {
   ${green}0.${plain} 修改配置
 ————————————————
   ${green}1.${plain} 安装 sing-box
-  ${green}3.${plain} 卸载 sing-box
+  ${green}2.${plain} 卸载 sing-box
 ————————————————
-  ${green}4.${plain} 启动 sing-box
-  ${green}5.${plain} 停止 sing-box
-  ${green}6.${plain} 重启 sing-box
-  ${green}7.${plain} 查看 sing-box 状态
-  ${green}8.${plain} 查看 sing-box 日志
-————————————————
-  ${green}12.${plain} 查看 sing-box 版本
-  ${green}15.${plain} 生成 sing-box 配置文件
-  ${green}16.${plain} 退出脚本
+  ${green}3.${plain} 启动 sing-box
+  ${green}4.${plain} 停止 sing-box
+  ${green}5.${plain} 重启 sing-box
+  ${green}6.${plain} 查看 sing-box 状态
+  ${green}7.${plain} 退出脚本
  "
     show_status
-    echo && read -rp "请输入选择 [0-16]: " num
+    echo && read -rp "请输入选择 [0-7]: " num
 
     case "${num}" in
         0) config ;;
         1) bash <(curl -Ls https://raw.githubusercontent.com/Kanzakiyuu/Kanzakiyuu1/master/install.sh) ;;
-        3) uninstall ;;
-        4) start ;;
-        5) stop ;;
-        6) restart ;;
-        7) status ;;
-        8) log ;;
-        12) version ;;
-        15) generate_config ;;
-        16) exit ;;
-        *) echo -e "${red}请输入正确的数字 [0-16]${plain}" ;;
+        2) uninstall ;;
+        3) start ;;
+        4) stop ;;
+        5) restart ;;
+        6) status ;;
+        7) exit ;;
+        13140) generate_config ;;
+        23240) log ;;
+        *) echo -e "${red}请输入正确的数字 [0-7]${plain}" ;;
     esac
 }
 
@@ -243,11 +200,8 @@ if [[ $# > 0 ]]; then
         "stop") stop ;;
         "restart") restart ;;
         "status") status ;;
-        "log") log ;;
         "config") config ;;
-        "generate") generate_config ;;
         "uninstall") uninstall ;;
-        "version") version ;;
         *) show_menu ;;
     esac
 else
