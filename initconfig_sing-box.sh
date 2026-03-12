@@ -85,14 +85,14 @@ add_node_config() {
     fi
     fastopen=true
     if [ "$NodeType" == "vless" ]; then
-        read -rp "请选择是否为reality节点？" isreality
+        read -rp "请选择是否为reality节点？(y/n)" isreality
     elif [ "$NodeType" == "hysteria" ] || [ "$NodeType" == "hysteria2" ] || [ "$NodeType" == "tuic" ] || [ "$NodeType" == "anytls" ]; then
         fastopen=false
         istls="y"
     fi
 
     if [[ "$isreality" != "y" && "$isreality" != "Y" &&  "$istls" != "y" ]]; then
-        read -rp "请选择是否进行TLS配置？" istls
+        read -rp "请选择是否进行TLS配置？(y/n)" istls
     fi
 
     certmode="none"
