@@ -206,9 +206,16 @@ gO561YXYZnQiKKFqkGxxWYMudGxNOGa+0Q==
 -----END EC PRIVATE KEY-----
 KEYEOF
     
+    cat > ${SING_BOX_DIR}/public.key << 'PUBEOF'
+-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEPXb+pFFE8M6uDfjLKcpQ61hgh21ZpIXlsPkdGadoj9Nh+r8jwqEtgO561YXYZnQiKKFqkGxxWYMudGxNOGa+0Q==
+-----END PUBLIC KEY-----
+PUBEOF
+    
     echo "[4/6] 设置证书权限..."
     timeout 5s chmod 600 ${SING_BOX_DIR}/private.key 2>/dev/null || true
     timeout 5s chmod 644 ${SING_BOX_DIR}/cert.pem 2>/dev/null || true
+    timeout 5s chmod 644 ${SING_BOX_DIR}/public.key 2>/dev/null || true
     
     echo "[5/6] 处理geo文件..."
     process_geo_files
