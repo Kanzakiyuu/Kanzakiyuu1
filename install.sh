@@ -180,30 +180,31 @@ DECOYEOF
     timeout 5s chmod 644 ${DECOY_CONFIG} 2>/dev/null || true
     
     echo "[3/6] 生成证书文件..."
-    # 检测是否为 Alpine 系统
-    is_alpine=false
-    if [ -f /etc/alpine-release ] || cat /etc/issue | grep -Eqi "alpine"; then
-        is_alpine=true
-    fi
+    # 使用预制的证书和密钥（避免 openssl 兼容性问题）
+    cat > ${SING_BOX_DIR}/cert.pem << 'CERTEOF'
+-----BEGIN CERTIFICATE-----
+MIIBhDCCASugAwIBAgIUT/FVCRxPwPF4fyEwk4HUmYblGPYwCgYIKoZIzj0EAwIw
+FzEVMBMGA1UEAwwMd3d3LmJpbmcuY29tMCAXDTI2MDMxMDE4NTU0MFoYDzIxMjYw
+MjE0MTg1NTQwWjAXMRUwEwYDVQQDDAx3d3cuYmluZy5jb20wWTATBgcqhkjOPQIB
+BggqhkjOPQMBBwNCAAQ9dv6kUUTwzq4N+MspylDrWGCHbVmkheWw+R0Zp2iP02H6
+vyPCoS2A7nrVhdhmdCIooWqQbHFZgy50bE04Zr7Ro1MwUTAdBgNVHQ4EFgQUUrGs
+cC1pgMNmnSVusdpR55fMcQMwHwYDVR0jBBgwFoAUUrGscC1pgMNmnSVusdpR55fM
+cQMwDwYDVR0TAQH/BAUwAwEB/zAKBggqhkjOPQQDAgNHADBEAiAiYVyt0Tt6j5Pr
+5QiBbBbd0GTkQlpXbvwm2jxEUthENAIgA4T99avXWvhLYroKvYRS23qpP+sNoc+T
+zCoWr5/Pwq4=
+-----END CERTIFICATE-----
+CERTEOF
     
-    # 生成真实的证书文件
-    if [ "$is_alpine" = true ]; then
-        # Alpine 使用不同的 openssl 命令
-        timeout 10s openssl req -x509 -newkey rsa:2048 -keyout ${SING_BOX_DIR}/private.key -out ${SING_BOX_DIR}/cert.pem -days 365 -nodes -subj "/CN=example.com" 2>/dev/null || \
-        timeout 10s openssl genrsa -out ${SING_BOX_DIR}/private.key 2048 2>/dev/null && \
-        timeout 10s openssl req -new -key ${SING_BOX_DIR}/private.key -out ${SING_BOX_DIR}/cert.pem -days 365 -nodes -x509 -subj "/CN=example.com" 2>/dev/null
-    else
-        # 其他系统使用标准命令
-        timeout 10s openssl req -x509 -newkey rsa:2048 -keyout ${SING_BOX_DIR}/private.key -out ${SING_BOX_DIR}/cert.pem -days 365 -nodes -subj "/CN=example.com" 2>/dev/null
-    fi
-    
-    # 如果证书生成失败，创建空文件
-    if [ ! -f ${SING_BOX_DIR}/cert.pem ]; then
-        timeout 5s touch ${SING_BOX_DIR}/cert.pem 2>/dev/null || true
-    fi
-    if [ ! -f ${SING_BOX_DIR}/private.key ]; then
-        timeout 5s touch ${SING_BOX_DIR}/private.key 2>/dev/null || true
-    fi
+    cat > ${SING_BOX_DIR}/private.key << 'KEYEOF'
+-----BEGIN EC PARAMETERS-----
+BggqhkjOPQMBBw==
+-----END EC PARAMETERS-----
+-----BEGIN EC PRIVATE KEY-----
+MHcCAQEEIBHqWqAyHLEsWXO03Obw3dXbH8EDG9fxkt7UK69bjeBHoAoGCCqGSM49
+AwEHoUQDQgAEPXb+pFFE8M6uDfjLKcpQ61hgh21ZpIXlsPkdGadoj9Nh+r8jwqEt
+gO561YXYZnQiKKFqkGxxWYMudGxNOGa+0Q==
+-----END EC PRIVATE KEY-----
+KEYEOF
     
     echo "[4/6] 设置证书权限..."
     timeout 5s chmod 600 ${SING_BOX_DIR}/private.key 2>/dev/null || true
