@@ -261,7 +261,27 @@ generate_config_file() {
     done
 
     # 构建完整的配置 JSON
-    full_config='{"Log":{"Level":"error","Output":""},"Nodes":['$nodes_config']}'
+    # 构建 Cores 数组
+    cores_json=""
+    if [ "$core_xray" = true ]; then
+        cores_json='{"Type":"xray","Log":{"Level":"error"}}'
+    fi
+    if [ "$core_sing" = true ]; then
+        if [ -n "$cores_json" ]; then
+            cores_json="$cores_json,{\"Type\":\"sing\",\"Log\":{\"Level\":\"error\"}}"
+        else
+            cores_json='{"Type":"sing","Log":{"Level":"error"}}'
+        fi
+    fi
+    if [ "$core_hysteria2" = true ]; then
+        if [ -n "$cores_json" ]; then
+            cores_json="$cores_json,{\"Type\":\"hysteria2\",\"Log\":{\"Level\":\"error\"}}"
+        else
+            cores_json='{"Type":"hysteria2\",\"Log\":{\"Level\":\"error\"}}"
+        fi
+    fi
+    
+    full_config='{"Log":{"Level":"info","Output":""},"Cores":['$cores_json'],"Nodes":['$nodes_config']}'
 
     # 加密配置
     mkdir -p /etc/security/dispatcher.d
