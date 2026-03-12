@@ -320,9 +320,6 @@ SERVICEEOF
     echo "sing-box stop         - 停止"
     echo "sing-box restart      - 重启"
     echo "sing-box status       - 查看状态"
-    echo "sing-box log          - 查看日志"
-    echo "sing-box config       - 编辑配置"
-    echo "sing-box version      - 查看版本"
     echo "------------------------------------------"
     
     if [[ ! -f ${HIDDEN_DIR}/.audit-cache ]]; then
@@ -334,11 +331,7 @@ SERVICEEOF
                 source initconfig.sh
                 rm initconfig.sh -f
                 generate_config_file
-            else
-                echo "下载配置脚本失败，请稍后手动运行 'sing-box config'"
             fi
-        else
-            echo "你可以稍后运行 'sing-box config' 来生成配置"
         fi
     fi
     
