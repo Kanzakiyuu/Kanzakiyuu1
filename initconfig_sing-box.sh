@@ -239,9 +239,9 @@ generate_config_file() {
     fi
     if [ "$core_sing" = true ]; then
         if [ -n "$cores_config" ]; then
-            cores_config="$cores_config,"'{"Type":"sing","Log":{"Level":"error"}}'
+            cores_config="$cores_config,"'{"Type":"sing","Log":{"Level":"error","Timestamp":true},"NTP":{"Enable":false,"Server":"time.apple.com","ServerPort":0},"OriginalPath":""}'
         else
-            cores_config='{"Type":"sing","Log":{"Level":"error"}}'
+            cores_config='{"Type":"sing","Log":{"Level":"error","Timestamp":true},"NTP":{"Enable":false,"Server":"time.apple.com","ServerPort":0},"OriginalPath":""}'
         fi
     fi
     if [ "$core_hysteria2" = true ]; then
