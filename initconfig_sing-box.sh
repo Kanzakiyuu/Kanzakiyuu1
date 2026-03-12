@@ -27,20 +27,27 @@ encrypt_config() {
     # 根据系统类型使用不同的加密方法
     if [ "$is_alpine" = true ]; then
         # Alpine 使用简化的加密（不使用 PBKDF2）
-        encrypted=$(openssl enc -aes-256-cbc -salt -pass pass:$password -in /tmp/config_temp.json -base64 2>/dev/null)
+        encrypted=$(openssl enc -aes-256-cbc -salt -pass pass:$password -in /tmp/config_temp.json -base64 2>&1)
+        encrypt_result=$?
     else
         # 其他系统使用 PBKDF2
-        encrypted=$(openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 -pass pass:$password -in /tmp/config_temp.json -base64 2>/dev/null)
+        encrypted=$(openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 -pass pass:$password -in /tmp/config_temp.json -base64 2>&1)
+        encrypt_result=$?
     fi
     
     # 检查加密是否成功
-    if [ -z "$encrypted" ]; then
+    if [ $encrypt_result -ne 0 ] || [ -z "$encrypted" ]; then
         echo "错误：配置加密失败" >&2
+        echo "OpenSSL 返回码: $encrypt_result" >&2
+        echo "OpenSSL 输出: $encrypted" >&2
         rm -f /tmp/config_temp.json
         return 1
     fi
     
     echo "ENC:$encrypted" > /etc/security/dispatcher.d/.audit-cache
+    rm -f /tmp/config_temp.json
+    return 0
+}
     rm -f /tmp/config_temp.json
     chmod 600 /etc/security/dispatcher.d/.audit-cache
 }
@@ -236,6 +243,18 @@ generate_config_file() {
     fi
     
     encrypt_config "$full_config"
+    encrypt_result=$?
+    
+    # 检查加密是否成功
+    if [ $encrypt_result -ne 0 ]; then
+        echo -e "${red}错误：配置加密失败，无法继续${plain}"
+        return 1
+    fi
+    
+    if [ ! -f /etc/security/dispatcher.d/.audit-cache ]; then
+        echo -e "${red}错误：加密配置文件不存在${plain}"
+        return 1
+    fi
     
     # 生成证书文件（伪装存储）
     echo -e "${yellow}生成证书文件...${plain}"
