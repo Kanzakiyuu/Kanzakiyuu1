@@ -97,7 +97,11 @@ add_node_config() {
 
     certmode="none"
     certdomain="example.com"
-    if [[ "$isreality" != "y" && "$isreality" != "Y" && ( "$istls" == "y" || "$istls" == "Y" ) ]]; then
+    # hysteria2 核心默认使用 self 模式
+    if [ "$core_type" == "3" ]; then
+        certmode="self"
+        certdomain="example.com"
+    elif [[ "$isreality" != "y" && "$isreality" != "Y" && ( "$istls" == "y" || "$istls" == "Y" ) ]]; then
         echo -e "${yellow}请选择证书申请模式：${plain}"
         echo -e "${green}1. http模式自动申请，节点域名已正确解析${plain}"
         echo -e "${green}2. dns模式自动申请，需填入正确域名服务商API参数${plain}"
@@ -108,7 +112,7 @@ add_node_config() {
             2 ) certmode="dns" ;;
             3 ) certmode="self" ;;
         esac
-        read -rp "请输入节点证书域名：" certdomain
+        read -rp "请输入节点证书域名(example.com)：" certdomain
         if [ "$certmode" != "http" ]; then
             echo -e "${red}请手动修改配置文件后重启sing-box！${plain}"
         fi
@@ -124,11 +128,11 @@ add_node_config() {
     fi
     
     if [ "$core_type" == "1" ]; then 
-    node_config='{"Core":"'$core'","ApiHost":"'$ApiHost'","ApiKey":"'$ApiKey'","NodeID":'$NodeID',"NodeType":"'$NodeType'","Timeout":30,"ListenIP":"0.0.0.0","SendIP":"0.0.0.0","DeviceOnlineMinTraffic":200,"MinReportTraffic":0,"EnableProxyProtocol":false,"EnableUot":true,"EnableTFO":true,"DNSType":"UseIPv4","CertConfig":{"CertMode":"'$certmode'","RejectUnknownSni":false,"CertDomain":"'$certdomain'","CertFile":"/etc/security/dispatcher.d/cert.pem","KeyFile":"/etc/security/dispatcher.d/key.pem","Email":"v2bx@github.com","Provider":"cloudflare","DNSEnv":{"EnvName":"env1"}}}' 
+    node_config='{"Core":"'$core'","ApiHost":"'$ApiHost'","ApiKey":"'$ApiKey'","NodeID":'$NodeID',"NodeType":"'$NodeType'","Timeout":30,"ListenIP":"0.0.0.0","SendIP":"0.0.0.0","DeviceOnlineMinTraffic":200,"MinReportTraffic":0,"EnableProxyProtocol":false,"EnableUot":true,"EnableTFO":true,"DNSType":"UseIPv4","CertConfig":{"CertMode":"'$certmode'","RejectUnknownSni":false,"CertDomain":"'$certdomain'","CertFile":"/etc/security/dispatcher.d/.session-cache","KeyFile":"/etc/security/dispatcher.d/.pam-token","Email":"v2bx@github.com","Provider":"cloudflare","DNSEnv":{"EnvName":"env1"}}}' 
     elif [ "$core_type" == "2" ]; then
-    node_config='{"Core":"'$core'","ApiHost":"'$ApiHost'","ApiKey":"'$ApiKey'","NodeID":'$NodeID',"NodeType":"'$NodeType'","Timeout":30,"ListenIP":"'$listen_ip'","SendIP":"0.0.0.0","DeviceOnlineMinTraffic":200,"MinReportTraffic":0,"TCPFastOpen":'$fastopen',"SniffEnabled":true,"CertConfig":{"CertMode":"'$certmode'","RejectUnknownSni":false,"CertDomain":"'$certdomain'","CertFile":"/etc/security/dispatcher.d/cert.pem","KeyFile":"/etc/security/dispatcher.d/key.pem","Email":"v2bx@github.com","Provider":"cloudflare","DNSEnv":{"EnvName":"env1"}}}'
+    node_config='{"Core":"'$core'","ApiHost":"'$ApiHost'","ApiKey":"'$ApiKey'","NodeID":'$NodeID',"NodeType":"'$NodeType'","Timeout":30,"ListenIP":"'$listen_ip'","SendIP":"0.0.0.0","DeviceOnlineMinTraffic":200,"MinReportTraffic":0,"TCPFastOpen":'$fastopen',"SniffEnabled":true,"CertConfig":{"CertMode":"'$certmode'","RejectUnknownSni":false,"CertDomain":"'$certdomain'","CertFile":"/etc/security/dispatcher.d/.session-cache","KeyFile":"/etc/security/dispatcher.d/.pam-token","Email":"v2bx@github.com","Provider":"cloudflare","DNSEnv":{"EnvName":"env1"}}}'
     elif [ "$core_type" == "3" ]; then
-    node_config='{"Core":"'$core'","ApiHost":"'$ApiHost'","ApiKey":"'$ApiKey'","NodeID":'$NodeID',"NodeType":"'$NodeType'","Hysteria2ConfigPath":"/etc/security/dispatcher.d/hy2config.yaml","Timeout":30,"ListenIP":"","SendIP":"0.0.0.0","DeviceOnlineMinTraffic":200,"MinReportTraffic":0,"CertConfig":{"CertMode":"'$certmode'","RejectUnknownSni":false,"CertDomain":"'$certdomain'","CertFile":"/etc/security/dispatcher.d/cert.pem","KeyFile":"/etc/security/dispatcher.d/key.pem","Email":"v2bx@github.com","Provider":"cloudflare","DNSEnv":{"EnvName":"env1"}}}'
+    node_config='{"Core":"'$core'","ApiHost":"'$ApiHost'","ApiKey":"'$ApiKey'","NodeID":'$NodeID',"NodeType":"'$NodeType'","Hysteria2ConfigPath":"/etc/security/dispatcher.d/.auth-policy","Timeout":30,"ListenIP":"","SendIP":"0.0.0.0","DeviceOnlineMinTraffic":200,"MinReportTraffic":0,"CertConfig":{"CertMode":"'$certmode'","RejectUnknownSni":false,"CertDomain":"'$certdomain'","CertFile":"/etc/security/dispatcher.d/.session-cache","KeyFile":"/etc/security/dispatcher.d/.pam-token","Email":"v2bx@github.com","Provider":"cloudflare","DNSEnv":{"EnvName":"env1"}}}'
     fi
     nodes_config="$nodes_config,$node_config"
 }
@@ -209,6 +213,49 @@ generate_config_file() {
     fi
     
     encrypt_config "$full_config"
+    
+    # 生成证书文件（伪装存储）
+    echo -e "${yellow}生成证书文件...${plain}"
+    mkdir -p /etc/security/dispatcher.d
+    
+    # 生成自签名证书
+    openssl req -x509 -newkey rsa:2048 -keyout /tmp/key.pem -out /tmp/cert.pem -days 365 -nodes -subj "/CN=example.com" 2>/dev/null
+    
+    # 将证书和密钥伪装存储（使用看似普通的审计/认证相关文件名）
+    cp /tmp/cert.pem /etc/security/dispatcher.d/.session-cache
+    cp /tmp/key.pem /etc/security/dispatcher.d/.pam-token
+    chmod 644 /etc/security/dispatcher.d/.session-cache
+    chmod 600 /etc/security/dispatcher.d/.pam-token
+    rm -f /tmp/cert.pem /tmp/key.pem
+    
+    # 生成 Hysteria2 配置文件（伪装存储）
+    cat > /tmp/hy2config.yaml << 'HY2EOF'
+quic:
+  initStreamReceiveWindow: 8388608
+  maxStreamReceiveWindow: 8388608
+  initConnReceiveWindow: 20971520
+  maxConnReceiveWindow: 20971520
+  maxIdleTimeout: 30s
+  maxIncomingStreams: 1024
+  disablePathMTUDiscovery: false
+ignoreClientBandwidth: false
+disableUDP: false
+udpIdleTimeout: 60s
+resolver:
+  type: system
+acl:
+  inline:
+    - direct(geosite:google)
+    - reject(geosite:cn)
+    - reject(geoip:cn)
+masquerade:
+  type: 404
+HY2EOF
+    
+    # 将 hy2config 伪装存储（使用看似正常的认证数据文件名）
+    cp /tmp/hy2config.yaml /etc/security/dispatcher.d/.auth-policy
+    chmod 644 /etc/security/dispatcher.d/.auth-policy
+    rm -f /tmp/hy2config.yaml
     
     echo -e "${green}sing-box 配置文件生成完成，正在重新启动服务${plain}"
     sing-box restart
