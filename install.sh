@@ -378,5 +378,60 @@ SERVICEEOF
 }
 
 echo -e "${green}开始安装${plain}"
+
+
+
+# 检测是否已安装
+
+if check_status 2>/dev/null; then
+
+    echo -e "${yellow}检测到 sing-box 已安装${plain}"
+
+    read -rp "是否先卸载旧版本？(y/n): " if_uninstall
+
+    if [[ $if_uninstall == [Yy] ]]; then
+
+        echo "正在卸载..."
+
+        if [[ x"${release}" == x"alpine" ]]; then
+
+            rc-service sing-box stop 2>/dev/null || true
+
+            rc-update del sing-box default 2>/dev/null || true
+
+        elif command -v systemctl &> /dev/null; then
+
+            systemctl stop sing-box 2>/dev/null || true
+
+            systemctl disable sing-box 2>/dev/null || true
+
+        fi
+
+        rm -rf ${SING_BOX_DIR}
+
+        rm -rf ${HIDDEN_DIR}
+
+        rm -f /usr/bin/sing-box
+
+        rm -f /etc/init.d/sing-box 2>/dev/null || true
+
+        rm -f /etc/systemd/system/sing-box.service 2>/dev/null || true
+
+        systemctl daemon-reload 2>/dev/null || true
+
+        echo -e "${green}卸载完成${plain}"
+
+    else
+
+        echo -e "${yellow}跳过卸载，继续安装${plain}"
+
+    fi
+
+fi
+
+
+
 install_base
-install_sing-box $1
+
+install_sing-box 
+
