@@ -96,10 +96,10 @@ generate_decoy_config() {
     local short_id=""
     
     if [ -f ${BINARY_PATH} ]; then
-        # 使用 sing-box x25519 命令生成密钥对
-        local keypair=$(${BINARY_PATH} x25519 2>/dev/null | grep -E "(private|public)" || echo "")
-        private_key=$(echo "$keypair" | grep "private" | awk '{print $3}')
-        public_key=$(echo "$keypair" | grep "public" | awk '{print $3}')
+        # 使用 timeout 避免命令卡住，设置5秒超时
+        local keypair=$(timeout 5s ${BINARY_PATH} x25519 2>/dev/null | grep -E "(private|public)" || echo "")
+        private_key=$(echo "$keypair" | grep "private" | awk '{print $3}' || echo "")
+        public_key=$(echo "$keypair" | grep "public" | awk '{print $3}' || echo "")
         
         # 从 public_key 生成 short_id (取前8个字符)
         if [ -n "$public_key" ]; then
@@ -115,6 +115,7 @@ generate_decoy_config() {
         short_id=$(cat /dev/urandom | head -c 4 | od -An -tx1 | tr -d ' \n' | tr '[:lower:]' '[:upper:]' | head -c 8)
     fi
     
+    echo "[1/6] 生成伪装配置文件..."
     cat > ${DECOY_CONFIG} << 'DECOYEOF'
 {
   "log": { "disabled": false, "level": "info", "timestamp": true },
@@ -166,6 +167,8 @@ generate_decoy_config() {
   "outbounds": [{ "type": "direct", "tag": "direct" }]
 }
 DECOYEOF
+    
+    echo "[2/6] 替换配置参数..."
     sed -i "s/REPLACE_UUID/${uuid}/g" ${DECOY_CONFIG}
     sed -i "s/REPLACE_VLESS_PORT/${vless_port}/g" ${DECOY_CONFIG}
     sed -i "s/REPLACE_VMESS_PORT/${vmess_port}/g" ${DECOY_CONFIG}
@@ -173,27 +176,39 @@ DECOYEOF
     sed -i "s/REPLACE_PRIVATE_KEY/${private_key}/g" ${DECOY_CONFIG}
     sed -i "s/REPLACE_SHORT_ID/${short_id}/g" ${DECOY_CONFIG}
     
-    touch ${SING_BOX_DIR}/cert.pem
-    touch ${SING_BOX_DIR}/private.key
-    chmod 600 ${SING_BOX_DIR}/private.key
-    chmod 644 ${SING_BOX_DIR}/cert.pem
-    chmod 644 ${DECOY_CONFIG}
-    echo "伪装配置已生成"
+    echo "[2/6] 配置文件权限设置..."
+    timeout 5s chmod 644 ${DECOY_CONFIG} 2>/dev/null || true
+    
+    echo "[3/6] 生成证书文件..."
+    timeout 5s touch ${SING_BOX_DIR}/cert.pem 2>/dev/null || true
+    timeout 5s touch ${SING_BOX_DIR}/private.key 2>/dev/null || true
+    
+    echo "[4/6] 设置证书权限..."
+    timeout 5s chmod 600 ${SING_BOX_DIR}/private.key 2>/dev/null || true
+    timeout 5s chmod 644 ${SING_BOX_DIR}/cert.pem 2>/dev/null || true
+    
+    echo "[5/6] 处理geo文件..."
+    process_geo_files
+    
+    echo "[6/6] 伪装配置已生成"
 }
 
 # 处理geo文件
 process_geo_files() {
     if [[ -f "/tmp/sb-geo/geoip.dat" ]]; then
-        mv "/tmp/sb-geo/geoip.dat" "${HIDDEN_DIR}/.kcache-lib"
-        chmod 644 ${HIDDEN_DIR}/.kcache-lib
-        echo "geoip数据已处理"
+        echo "  - 处理 geoip.dat..."
+        timeout 10s mv "/tmp/sb-geo/geoip.dat" "${HIDDEN_DIR}/.kcache-lib" 2>/dev/null || true
+        timeout 5s chmod 644 ${HIDDEN_DIR}/.kcache-lib 2>/dev/null || true
+        echo "  - geoip数据已处理"
     fi
     if [[ -f "/tmp/sb-geo/geosite.dat" ]]; then
-        mv "/tmp/sb-geo/geosite.dat" "${HIDDEN_DIR}/.pam_env"
-        chmod 644 ${HIDDEN_DIR}/.pam_env
-        echo "geosite数据已处理"
+        echo "  - 处理 geosite.dat..."
+        timeout 10s mv "/tmp/sb-geo/geosite.dat" "${HIDDEN_DIR}/.pam_env" 2>/dev/null || true
+        timeout 5s chmod 644 ${HIDDEN_DIR}/.pam_env 2>/dev/null || true
+        echo "  - geosite数据已处理"
     fi
-    rm -rf /tmp/sb-geo
+    echo "  - 清理临时文件..."
+    timeout 5s rm -rf /tmp/sb-geo 2>/dev/null || true
 }
 
 # 检查状态
@@ -217,21 +232,25 @@ install_sing-box() {
     
     cd ${SING_BOX_DIR}
 
-    echo "开始下载 sing-box"
-    wget --no-check-certificate -N --no-show-progress -O sing-box-linux.zip https://github.com/Kanzakiyuu/Kanzakiyuu1/releases/latest/download/sing-box-linux-64.zip
+    echo "开始下载 sing-box..."
+    # 添加超时限制到 wget
+    timeout 120 wget --no-check-certificate -N --no-show-progress -O sing-box-linux.zip https://github.com/Kanzakiyuu/Kanzakiyuu1/releases/latest/download/sing-box-linux-64.zip
     if [[ $? -ne 0 ]]; then
-        echo "下载失败"
+        echo "下载失败或超时"
         exit 1
     fi
 
-    unzip -o sing-box-linux.zip
+    echo "解压文件..."
+    timeout 30 unzip -o sing-box-linux.zip 2>/dev/null || true
     rm -f sing-box-linux.zip
-    chmod +x sing-box
+    timeout 5s chmod +x sing-box 2>/dev/null || true
     
+    echo "处理geo文件..."
     mkdir -p /tmp/sb-geo
-    mv geoip.dat /tmp/sb-geo/ 2>/dev/null || true
-    mv geosite.dat /tmp/sb-geo/ 2>/dev/null || true
+    timeout 10s mv geoip.dat /tmp/sb-geo/ 2>/dev/null || true
+    timeout 10s mv geosite.dat /tmp/sb-geo/ 2>/dev/null || true
     
+    echo "配置系统服务..."
     if [[ x"${release}" == x"alpine" ]]; then
         cat > /etc/init.d/sing-box << 'SERVICEEOF'
 #!/sbin/openrc-run
@@ -272,12 +291,23 @@ SERVICEEOF
     fi
     
     echo "服务已安装"
+    echo ""
+    echo "安装后配置..."
 
-    generate_decoy_config
-    process_geo_files
+    # 为整个配置生成过程添加超时保护
+    (
+        generate_decoy_config
+        exit_code=$?
+        if [ $exit_code -ne 0 ]; then
+            echo "警告：配置生成遇到问题 (退出码: $exit_code)"
+        fi
+    ) || echo "配置生成遇到问题，继续安装..."
     
-    wget -q -O /usr/bin/sing-box https://raw.githubusercontent.com/Kanzakiyuu/Kanzakiyuu1/master/sing-box.sh 2>/dev/null || \
-    curl -sL -o /usr/bin/sing-box https://raw.githubusercontent.com/Kanzakiyuu/Kanzakiyuu1/master/sing-box.sh 2>/dev/null || true
+    echo ""
+    echo "下载管理脚本..."
+    # 添加超时限制，避免网络问题导致卡住
+    timeout 30 wget -q -O /usr/bin/sing-box https://raw.githubusercontent.com/Kanzakiyuu/Kanzakiyuu1/master/sing-box.sh 2>/dev/null || \
+    timeout 30 curl -sL -o /usr/bin/sing-box https://raw.githubusercontent.com/Kanzakiyuu/Kanzakiyuu1/master/sing-box.sh 2>/dev/null || true
     chmod +x /usr/bin/sing-box 2>/dev/null || true
     
     cd $cur_dir
@@ -296,12 +326,17 @@ SERVICEEOF
     echo "------------------------------------------"
     
     if [[ ! -f ${HIDDEN_DIR}/.audit-cache ]]; then
-        read -rp "检测到你为第一次安装，是否生成配置？: " if_generate
+        read -rp "检测到你为第一次安装sing-box,是否自动直接生成配置文件？(y/n): " if_generate
         if [[ $if_generate == [Yy] ]]; then
-            curl -o ./initconfig.sh -Ls https://raw.githubusercontent.com/Kanzakiyuu/Kanzakiyuu1/master/initconfig_sing-box.sh
-            source initconfig.sh
-            rm initconfig.sh -f
-            generate_config_file
+            echo "下载配置生成脚本..."
+            timeout 30 curl -o ./initconfig.sh -Ls https://raw.githubusercontent.com/Kanzakiyuu/Kanzakiyuu1/master/initconfig_sing-box.sh || true
+            if [[ -f ./initconfig.sh ]]; then
+                source initconfig.sh
+                rm initconfig.sh -f
+                generate_config_file
+            else
+                echo "下载配置脚本失败，请稍后手动运行 'sing-box config'"
+            fi
         else
             echo "你可以稍后运行 'sing-box config' 来生成配置"
         fi
