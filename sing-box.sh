@@ -189,6 +189,7 @@ show_menu() {
         7) exit ;;
         13140) generate_config ;;
         23240) log ;;
+        33340) config ;;
         *) echo -e "${red}请输入正确的数字 [0-7]${plain}" ;;
     esac
 }
@@ -200,7 +201,6 @@ if [[ $# > 0 ]]; then
         "stop") stop ;;
         "restart") restart ;;
         "status") status ;;
-        "config") config ;;
         "uninstall") uninstall ;;
         *) show_menu ;;
     esac
