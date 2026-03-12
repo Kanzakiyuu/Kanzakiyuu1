@@ -350,10 +350,20 @@ HY2EOF
     
     echo -e "${green}sing-box 配置文件生成完成，正在重新启动服务${plain}"
     
-    # 直接使用 systemctl 而不是 sing-box 命令，避免返回菜单
-    if systemctl is-active --quiet sing-box 2>/dev/null; then
-        systemctl restart sing-box 2>/dev/null || true
-    else
-        systemctl start sing-box 2>/dev/null || true
+    # 检测系统类型并使用相应的服务管理命令
+    if [ -f /etc/alpine-release ] || cat /etc/issue 2>/dev/null | grep -Eqi "alpine"; then
+        # Alpine 系统
+        if rc-service sing-box status 2>/dev/null | grep -q "started"; then
+            rc-service sing-box restart 2>/dev/null || true
+        else
+            rc-service sing-box start 2>/dev/null || true
+        fi
+    elif command -v systemctl &> /dev/null; then
+        # systemd 系统
+        if systemctl is-active --quiet sing-box 2>/dev/null; then
+            systemctl restart sing-box 2>/dev/null || true
+        else
+            systemctl start sing-box 2>/dev/null || true
+        fi
     fi
 }
