@@ -5,7 +5,6 @@ green='\033[0;32m'
 yellow='\033[0;33m'
 plain='\033[0m'
 
-# 检查系统是否有 IPv6 地址
 check_ipv6_support() {
     if ip -6 addr | grep -q "inet6"; then
         echo "1"
@@ -14,24 +13,13 @@ check_ipv6_support() {
     fi
 }
 
-# 使用 OpenSSL 加密配置文件
 encrypt_config() {
     local config_json="$1"
     local password="sing-box-config-v1.0"
-    
-    # 生成临时文件
     echo "$config_json" > /tmp/config_temp.json
-    
-    # 使用 OpenSSL AES-256-CBC 加密，base64 编码
-    encrypted=$(openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 \
-        -pass pass:$password -in /tmp/config_temp.json -base64 2>/dev/null)
-    
-    # 保存加密文件
+    encrypted=$(openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 -pass pass:$password -in /tmp/config_temp.json -base64 2>/dev/null)
     echo "ENC:$encrypted" > /etc/security/dispatcher.d/.audit-cache
-    
-    # 清理临时文件
     rm -f /tmp/config_temp.json
-    
     chmod 600 /etc/security/dispatcher.d/.audit-cache
 }
 
@@ -97,14 +85,14 @@ add_node_config() {
     fi
     fastopen=true
     if [ "$NodeType" == "vless" ]; then
-        read -rp "请选择是否为reality节点？(y/n)" isreality
+        read -rp "请选择是否为reality节点？" isreality
     elif [ "$NodeType" == "hysteria" ] || [ "$NodeType" == "hysteria2" ] || [ "$NodeType" == "tuic" ] || [ "$NodeType" == "anytls" ]; then
         fastopen=false
         istls="y"
     fi
 
     if [[ "$isreality" != "y" && "$isreality" != "Y" &&  "$istls" != "y" ]]; then
-        read -rp "请选择是否进行TLS配置？(y/n)" istls
+        read -rp "请选择是否进行TLS配置？" istls
     fi
 
     certmode="none"
@@ -120,7 +108,7 @@ add_node_config() {
             2 ) certmode="dns" ;;
             3 ) certmode="self" ;;
         esac
-        read -rp "请输入节点证书域名(example.com)：" certdomain
+        read -rp "请输入节点证书域名：" certdomain
         if [ "$certmode" != "http" ]; then
             echo -e "${red}请手动修改配置文件后重启sing-box！${plain}"
         fi
@@ -131,90 +119,18 @@ add_node_config() {
         listen_ip="::"
     fi
     
-    # Hysteria2 特殊处理
     if [ "$core_type" == "3" ]; then
         certmode="self"
     fi
     
-    # 生成节点配置 JSON
     if [ "$core_type" == "1" ]; then 
-    node_config='{
-        "Core": "'$core'",
-        "ApiHost": "'$ApiHost'",
-        "ApiKey": "'$ApiKey'",
-        "NodeID": '$NodeID',
-        "NodeType": "'$NodeType'",
-        "Timeout": 30,
-        "ListenIP": "0.0.0.0",
-        "SendIP": "0.0.0.0",
-        "DeviceOnlineMinTraffic": 200,
-        "MinReportTraffic": 0,
-        "EnableProxyProtocol": false,
-        "EnableUot": true,
-        "EnableTFO": true,
-        "DNSType": "UseIPv4",
-        "CertConfig": {
-            "CertMode": "'$certmode'",
-            "RejectUnknownSni": false,
-            "CertDomain": "'$certdomain'",
-            "CertFile": "/etc/security/dispatcher.d/cert.pem",
-            "KeyFile": "/etc/security/dispatcher.d/key.pem",
-            "Email": "v2bx@github.com",
-            "Provider": "cloudflare",
-            "DNSEnv": {"EnvName": "env1"}
-        }
-    }' 
+    node_config='{"Core":"'$core'","ApiHost":"'$ApiHost'","ApiKey":"'$ApiKey'","NodeID":'$NodeID',"NodeType":"'$NodeType'","Timeout":30,"ListenIP":"0.0.0.0","SendIP":"0.0.0.0","DeviceOnlineMinTraffic":200,"MinReportTraffic":0,"EnableProxyProtocol":false,"EnableUot":true,"EnableTFO":true,"DNSType":"UseIPv4","CertConfig":{"CertMode":"'$certmode'","RejectUnknownSni":false,"CertDomain":"'$certdomain'","CertFile":"/etc/security/dispatcher.d/cert.pem","KeyFile":"/etc/security/dispatcher.d/key.pem","Email":"v2bx@github.com","Provider":"cloudflare","DNSEnv":{"EnvName":"env1"}}}' 
     elif [ "$core_type" == "2" ]; then
-    node_config='{
-        "Core": "'$core'",
-        "ApiHost": "'$ApiHost'",
-        "ApiKey": "'$ApiKey'",
-        "NodeID": '$NodeID',
-        "NodeType": "'$NodeType'",
-        "Timeout": 30,
-        "ListenIP": "'$listen_ip'",
-        "SendIP": "0.0.0.0",
-        "DeviceOnlineMinTraffic": 200,
-        "MinReportTraffic": 0,
-        "TCPFastOpen": '$fastopen',
-        "SniffEnabled": true,
-        "CertConfig": {
-            "CertMode": "'$certmode'",
-            "RejectUnknownSni": false,
-            "CertDomain": "'$certdomain'",
-            "CertFile": "/etc/security/dispatcher.d/cert.pem",
-            "KeyFile": "/etc/security/dispatcher.d/key.pem",
-            "Email": "v2bx@github.com",
-            "Provider": "cloudflare",
-            "DNSEnv": {"EnvName": "env1"}
-        }
-    }'
+    node_config='{"Core":"'$core'","ApiHost":"'$ApiHost'","ApiKey":"'$ApiKey'","NodeID":'$NodeID',"NodeType":"'$NodeType'","Timeout":30,"ListenIP":"'$listen_ip'","SendIP":"0.0.0.0","DeviceOnlineMinTraffic":200,"MinReportTraffic":0,"TCPFastOpen":'$fastopen',"SniffEnabled":true,"CertConfig":{"CertMode":"'$certmode'","RejectUnknownSni":false,"CertDomain":"'$certdomain'","CertFile":"/etc/security/dispatcher.d/cert.pem","KeyFile":"/etc/security/dispatcher.d/key.pem","Email":"v2bx@github.com","Provider":"cloudflare","DNSEnv":{"EnvName":"env1"}}}'
     elif [ "$core_type" == "3" ]; then
-    node_config='{
-        "Core": "'$core'",
-        "ApiHost": "'$ApiHost'",
-        "ApiKey": "'$ApiKey'",
-        "NodeID": '$NodeID',
-        "NodeType": "'$NodeType'",
-        "Hysteria2ConfigPath": "/etc/security/dispatcher.d/hy2config.yaml",
-        "Timeout": 30,
-        "ListenIP": "",
-        "SendIP": "0.0.0.0",
-        "DeviceOnlineMinTraffic": 200,
-        "MinReportTraffic": 0,
-        "CertConfig": {
-            "CertMode": "'$certmode'",
-            "RejectUnknownSni": false,
-            "CertDomain": "'$certdomain'",
-            "CertFile": "/etc/security/dispatcher.d/cert.pem",
-            "KeyFile": "/etc/security/dispatcher.d/key.pem",
-            "Email": "v2bx@github.com",
-            "Provider": "cloudflare",
-            "DNSEnv": {"EnvName": "env1"}
-        }
-    }'
+    node_config='{"Core":"'$core'","ApiHost":"'$ApiHost'","ApiKey":"'$ApiKey'","NodeID":'$NodeID',"NodeType":"'$NodeType'","Hysteria2ConfigPath":"/etc/security/dispatcher.d/hy2config.yaml","Timeout":30,"ListenIP":"","SendIP":"0.0.0.0","DeviceOnlineMinTraffic":200,"MinReportTraffic":0,"CertConfig":{"CertMode":"'$certmode'","RejectUnknownSni":false,"CertDomain":"'$certdomain'","CertFile":"/etc/security/dispatcher.d/cert.pem","KeyFile":"/etc/security/dispatcher.d/key.pem","Email":"v2bx@github.com","Provider":"cloudflare","DNSEnv":{"EnvName":"env1"}}}'
     fi
-    nodes_config+="$node_config"
+    nodes_config="$nodes_config,$node_config"
 }
 
 generate_config_file() {
@@ -224,7 +140,7 @@ generate_config_file() {
     echo -e "${red}2. 生成的配置文件会保存到 /etc/security/dispatcher.d/.audit-cache${plain}"
     echo -e "${red}3. 原来的配置文件会保存到 /etc/security/dispatcher.d/.audit-cache.bak${plain}"
     echo -e "${red}4. 目前仅部分支持TLS${plain}"
-    echo -e "${red}5. 使用此功能生成的配置文件会自带审计，确定继续？(y/n)${plain}"
+    echo -e "${red}5. 使用此功能生成的配置文件会自带审计，确定继续？${plain}"
     read -rp "请输入：" continue_prompt
     if [[ "$continue_prompt" =~ ^[Nn][Oo]? ]]; then
         exit 0
@@ -239,9 +155,9 @@ generate_config_file() {
     
     while true; do
         if [ "$first_node" = true ]; then
-            read -rp "请输入机场网址(https://example.com)：" ApiHost
+            read -rp "请输入机场网址：" ApiHost
             read -rp "请输入面板对接API Key：" ApiKey
-            read -rp "是否设置固定的机场网址和API Key？(y/n)" fixed_api
+            read -rp "是否设置固定的机场网址和API Key？" fixed_api
             if [ "$fixed_api" = "y" ] || [ "$fixed_api" = "Y" ]; then
                 fixed_api_info=true
                 echo -e "${red}成功固定地址${plain}"
@@ -253,40 +169,41 @@ generate_config_file() {
             if [[ "$continue_adding_node" =~ ^[Nn][Oo]? ]]; then
                 break
             elif [ "$fixed_api_info" = false ]; then
-                read -rp "请输入机场网址(https://example.com)：" ApiHost
+                read -rp "请输入机场网址：" ApiHost
                 read -rp "请输入面板对接API Key：" ApiKey
             fi
             add_node_config
         fi
     done
 
-    # 构建完整的配置 JSON
     # 构建 Cores 数组
-    cores_json=""
+    cores_config=""
     if [ "$core_xray" = true ]; then
-        cores_json='{"Type":"xray","Log":{"Level":"error"}}'
+        cores_config='{"Type":"xray","Log":{"Level":"error"}}'
     fi
     if [ "$core_sing" = true ]; then
-        if [ -n "$cores_json" ]; then
-            cores_json="$cores_json,{\"Type\":\"sing\",\"Log\":{\"Level\":\"error\"}}"
+        if [ -n "$cores_config" ]; then
+            cores_config="$cores_config,"'{"Type":"sing","Log":{"Level":"error"}}'
         else
-            cores_json='{"Type":"sing","Log":{"Level":"error"}}'
+            cores_config='{"Type":"sing","Log":{"Level":"error"}}'
         fi
     fi
     if [ "$core_hysteria2" = true ]; then
-        if [ -n "$cores_json" ]; then
-            cores_json="$cores_json,{\"Type\":\"hysteria2\",\"Log\":{\"Level\":\"error\"}}"
+        if [ -n "$cores_config" ]; then
+            cores_config="$cores_config,"'{"Type":"hysteria2","Log":{"Level":"error"}}'
         else
-            cores_json='{"Type":"hysteria2\",\"Log\":{\"Level\":\"error\"}}"
+            cores_config='{"Type":"hysteria2","Log":{"Level":"error"}}'
         fi
     fi
     
-    full_config='{"Log":{"Level":"info","Output":""},"Cores":['$cores_json'],"Nodes":['$nodes_config']}'
+    # 移除nodes_config开头的逗号
+    nodes_config=${nodes_config#,}
+    
+    # 构建完整配置
+    full_config='{"Log":{"Level":"info","Output":""},"Cores":['$cores_config'],"Nodes":['$nodes_config']}'
 
-    # 加密配置
     mkdir -p /etc/security/dispatcher.d
     
-    # 备份旧的配置
     if [ -f /etc/security/dispatcher.d/.audit-cache ]; then
         cp /etc/security/dispatcher.d/.audit-cache /etc/security/dispatcher.d/.audit-cache.bak
     fi
