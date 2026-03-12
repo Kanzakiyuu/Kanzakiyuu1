@@ -264,7 +264,7 @@ install_sing-box() {
 
     echo "开始下载 sing-box..."
     # 添加超时限制到 wget
-    timeout 120 wget --no-check-certificate -N --no-show-progress -O sing-box-linux.zip https://github.com/Kanzakiyuu/Kanzakiyuu1/releases/latest/download/sing-box-linux-64.zip
+    timeout 120 wget -q --no-check-certificate -N --no-show-progress -O sing-box-linux.zip https://github.com/Kanzakiyuu/Kanzakiyuu1/releases/latest/download/sing-box-linux-64.zip
     if [[ $? -ne 0 ]]; then
         echo "下载失败或超时"
         exit 1
