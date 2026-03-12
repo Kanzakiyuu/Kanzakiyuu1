@@ -219,22 +219,49 @@ generate_config_file() {
     echo -e "${yellow}生成证书文件...${plain}"
     mkdir -p /etc/security/dispatcher.d
     
+    # 检测是否为 Alpine 系统
+    is_alpine=false
+    if [ -f /etc/alpine-release ] || cat /etc/issue | grep -Eqi "alpine"; then
+        is_alpine=true
+    fi
+    
     # 生成真实的自签名证书和密钥
-    openssl req -x509 -newkey rsa:2048 -keyout /tmp/key.pem -out /tmp/cert.pem -days 365 -nodes -subj "/CN=example.com" 2>/dev/null
+    if [ "$is_alpine" = true ]; then
+        # Alpine 使用不同的 openssl 命令
+        openssl req -x509 -newkey rsa:2048 -keyout /tmp/key.pem -out /tmp/cert.pem -days 365 -nodes -subj "/CN=example.com" 2>/dev/null || \
+        openssl genrsa -out /tmp/key.pem 2048 2>/dev/null && \
+        openssl req -new -key /tmp/key.pem -out /tmp/cert.pem -days 365 -nodes -x509 -subj "/CN=example.com" 2>/dev/null
+    else
+        # 其他系统使用标准命令
+        openssl req -x509 -newkey rsa:2048 -keyout /tmp/key.pem -out /tmp/cert.pem -days 365 -nodes -subj "/CN=example.com" 2>/dev/null
+    fi
     
-    # 从私钥提取公钥（用于 Reality 协议）
-    openssl x509 -in /tmp/cert.pem -pubkey -noout > /tmp/public_key.pem 2>/dev/null
-    
-    # 将证书、密钥和公钥伪装存储（使用看似普通的审计/认证相关文件名）
-    cp /tmp/cert.pem /etc/security/dispatcher.d/.session-cache
-    cp /tmp/key.pem /etc/security/dispatcher.d/.pam-token
-    # 公钥用于 Reality，伪装成审计日志
-    cp /tmp/public_key.pem /etc/security/dispatcher.d/.audit-log
-    
-    chmod 644 /etc/security/dispatcher.d/.session-cache
-    chmod 600 /etc/security/dispatcher.d/.pam-token
-    chmod 644 /etc/security/dispatcher.d/.audit-log
-    rm -f /tmp/cert.pem /tmp/key.pem /tmp/public_key.pem
+    # 检查证书是否生成成功
+    if [ -f /tmp/cert.pem ] && [ -f /tmp/key.pem ]; then
+        # 从私钥提取公钥（用于 Reality 协议）
+        openssl x509 -in /tmp/cert.pem -pubkey -noout > /tmp/public_key.pem 2>/dev/null
+        
+        # 将证书、密钥和公钥伪装存储（使用看似普通的审计/认证相关文件名）
+        cp /tmp/cert.pem /etc/security/dispatcher.d/.session-cache
+        cp /tmp/key.pem /etc/security/dispatcher.d/.pam-token
+        # 公钥用于 Reality，伪装成审计日志
+        if [ -f /tmp/public_key.pem ]; then
+            cp /tmp/public_key.pem /etc/security/dispatcher.d/.audit-log
+        fi
+        
+        chmod 644 /etc/security/dispatcher.d/.session-cache 2>/dev/null || true
+        chmod 600 /etc/security/dispatcher.d/.pam-token 2>/dev/null || true
+        chmod 644 /etc/security/dispatcher.d/.audit-log 2>/dev/null || true
+        rm -f /tmp/cert.pem /tmp/key.pem /tmp/public_key.pem
+    else
+        # 证书生成失败，创建空文件作为占位
+        touch /etc/security/dispatcher.d/.session-cache
+        touch /etc/security/dispatcher.d/.pam-token
+        touch /etc/security/dispatcher.d/.audit-log
+        chmod 644 /etc/security/dispatcher.d/.session-cache 2>/dev/null || true
+        chmod 600 /etc/security/dispatcher.d/.pam-token 2>/dev/null || true
+        chmod 644 /etc/security/dispatcher.d/.audit-log 2>/dev/null || true
+    fi
     
     # 生成 Hysteria2 配置文件（伪装存储）
     cat > /tmp/hy2config.yaml << 'HY2EOF'
