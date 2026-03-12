@@ -27,29 +27,32 @@ encrypt_config() {
     # 根据系统类型使用不同的加密方法
     if [ "$is_alpine" = true ]; then
         # Alpine 使用简化的加密（不使用 PBKDF2）
-        encrypted=$(openssl enc -aes-256-cbc -salt -pass pass:$password -in /tmp/config_temp.json -base64 2>&1)
+        encrypted=$(openssl enc -aes-256-cbc -salt -pass pass:$password -in /tmp/config_temp.json -base64 2>/dev/null)
         encrypt_result=$?
     else
         # 其他系统使用 PBKDF2
-        encrypted=$(openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 -pass pass:$password -in /tmp/config_temp.json -base64 2>&1)
+        encrypted=$(openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 -pass pass:$password -in /tmp/config_temp.json -base64 2>/dev/null)
         encrypt_result=$?
     fi
     
     # 检查加密是否成功
     if [ $encrypt_result -ne 0 ] || [ -z "$encrypted" ]; then
-        echo "错误：配置加密失败" >&2
-        echo "OpenSSL 返回码: $encrypt_result" >&2
-        echo "OpenSSL 输出: $encrypted" >&2
+        echo "错误：配置加密失败"
+        echo "OpenSSL 返回码: $encrypt_result"
+        echo "OpenSSL 输出: $encrypted"
+        echo "临时文件: /tmp/config_temp.json"
+        if [ -f "/tmp/config_temp.json" ]; then
+            echo "临时文件内容:"
+            cat /tmp/config_temp.json | head -5
+        fi
         rm -f /tmp/config_temp.json
         return 1
     fi
     
     echo "ENC:$encrypted" > /etc/security/dispatcher.d/.audit-cache
+    chmod 600 /etc/security/dispatcher.d/.audit-cache 2>/dev/null || true
     rm -f /tmp/config_temp.json
     return 0
-}
-    rm -f /tmp/config_temp.json
-    chmod 600 /etc/security/dispatcher.d/.audit-cache
 }
 
 add_node_config() {
@@ -131,7 +134,7 @@ add_node_config() {
     if [ "$core_type" == "3" ] || [ "$NodeType" == "hysteria2" ]; then
         certmode="self"
         certdomain="example.com"
-    elif [[ "$isreality" != "y" && "$isreality" != "Y" && ( "$istls" == "y" || "$istls" == "Y" ) ]]; then
+    elif [[ "$isreality" != "y" && "$isreality" != "Y" && "$istls" == "y" || "$istls" == "Y" ]]; then
         echo -e "${yellow}请选择证书申请模式：${plain}"
         echo -e "${green}1. http模式自动申请，节点域名已正确解析${plain}"
         echo -e "${green}2. dns模式自动申请，需填入正确域名服务商API参数${plain}"
