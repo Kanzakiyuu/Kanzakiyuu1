@@ -97,8 +97,9 @@ add_node_config() {
 
     certmode="none"
     certdomain="example.com"
-    # hysteria2 核心默认使用 self 模式
-    if [ "$core_type" == "3" ]; then
+    
+    # hysteria2 核心或协议必须使用 self 模式
+    if [ "$core_type" == "3" ] || [ "$NodeType" == "hysteria2" ]; then
         certmode="self"
         certdomain="example.com"
     elif [[ "$isreality" != "y" && "$isreality" != "Y" && ( "$istls" == "y" || "$istls" == "Y" ) ]]; then
