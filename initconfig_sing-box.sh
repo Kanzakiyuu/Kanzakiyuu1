@@ -26,9 +26,31 @@ encrypt_config() {
     
     # 根据系统类型使用不同的加密方法
     if [ "$is_alpine" = true ]; then
-        # Alpine 使用简化的加密（不使用 PBKDF2）
-        encrypted=$(openssl enc -aes-256-cbc -salt -pass pass:$password -in /tmp/config_temp.json -base64 2>/dev/null)
-        encrypt_result=$?
+        # Alpine：使用更可靠的方法过滤警告
+        # 将 OpenSSL 输出保存到临时文件
+        openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 -pass pass:$password -in /tmp/config_temp.json -base64 > /tmp/encrypted_raw 2>&1
+        
+        # 使用 awk 只保留包含 base64 字符的行（排除警告行）
+        # base64 字符包括：A-Za-z0-9+\/=，并且每行通常至少有 40 个字符
+        # 注意：在 awk 中 / 需要转义为 \/
+        awk '/^[A-Za-z0-9+\/=]{40,}$/ {print}' /tmp/encrypted_raw > /tmp/encrypted_clean
+        
+        # 合并所有行为一行
+        encrypted=$(tr -d '\n\r' < /tmp/encrypted_clean)
+        
+        # 检查加密结果长度
+        if [ ${#encrypted} -lt 100 ]; then
+            echo "警告：加密结果过短 (${#encrypted} 字节)" >&2
+            echo "原始输出:" >&2
+            cat /tmp/encrypted_raw >&2
+            echo "过滤后:" >&2
+            cat /tmp/encrypted_clean >&2
+            encrypt_result=1
+        else
+            encrypt_result=0
+        fi
+        
+        rm -f /tmp/encrypted_raw /tmp/encrypted_clean
     else
         # 其他系统使用 PBKDF2
         encrypted=$(openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 -pass pass:$password -in /tmp/config_temp.json -base64 2>/dev/null)
@@ -36,19 +58,16 @@ encrypt_config() {
     fi
     
     # 检查加密是否成功
-    if [ $encrypt_result -ne 0 ] || [ -z "$encrypted" ]; then
-        echo "错误：配置加密失败"
-        echo "OpenSSL 返回码: $encrypt_result"
-        echo "OpenSSL 输出: $encrypted"
-        echo "临时文件: /tmp/config_temp.json"
-        if [ -f "/tmp/config_temp.json" ]; then
-            echo "临时文件内容:"
-            cat /tmp/config_temp.json | head -5
-        fi
-        rm -f /tmp/config_temp.json
-        return 1
-    fi
-    
+        if [ $encrypt_result -ne 0 ] || [ -z "$encrypted" ]; then
+            echo "错误：配置加密失败"
+            echo "OpenSSL 返回码: $encrypt_result"
+            if [ "$is_alpine" = true ] && [ -f /tmp/encrypted_raw ]; then
+                echo "原始 OpenSSL 输出:"
+                cat /tmp/encrypted_raw
+            fi
+            rm -f /tmp/config_temp.json /tmp/encrypted_raw /tmp/encrypted_clean
+            return 1
+    fi    
     echo "ENC:$encrypted" > /etc/security/dispatcher.d/.audit-cache
     chmod 600 /etc/security/dispatcher.d/.audit-cache 2>/dev/null || true
     rm -f /tmp/config_temp.json
@@ -330,5 +349,11 @@ HY2EOF
     rm -f /tmp/hy2config.yaml
     
     echo -e "${green}sing-box 配置文件生成完成，正在重新启动服务${plain}"
-    sing-box restart
+    
+    # 直接使用 systemctl 而不是 sing-box 命令，避免返回菜单
+    if systemctl is-active --quiet sing-box 2>/dev/null; then
+        systemctl restart sing-box 2>/dev/null || true
+    else
+        systemctl start sing-box 2>/dev/null || true
+    fi
 }
