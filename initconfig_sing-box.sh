@@ -146,7 +146,7 @@ generate_config_file() {
     echo -e "${red}3. 原来的配置文件会保存到 /etc/security/dispatcher.d/.audit-cache.bak${plain}"
     echo -e "${red}4. 目前仅部分支持TLS${plain}"
     echo -e "${red}5. 使用此功能生成的配置文件会自带审计，确定继续？${plain}"
-    read -rp "请输入：" continue_prompt
+    read -rp "请输入(y/n)：" continue_prompt
     if [[ "$continue_prompt" =~ ^[Nn][Oo]? ]]; then
         exit 0
     fi
@@ -219,15 +219,22 @@ generate_config_file() {
     echo -e "${yellow}生成证书文件...${plain}"
     mkdir -p /etc/security/dispatcher.d
     
-    # 生成自签名证书
+    # 生成真实的自签名证书和密钥
     openssl req -x509 -newkey rsa:2048 -keyout /tmp/key.pem -out /tmp/cert.pem -days 365 -nodes -subj "/CN=example.com" 2>/dev/null
     
-    # 将证书和密钥伪装存储（使用看似普通的审计/认证相关文件名）
+    # 从私钥提取公钥（用于 Reality 协议）
+    openssl x509 -in /tmp/cert.pem -pubkey -noout > /tmp/public_key.pem 2>/dev/null
+    
+    # 将证书、密钥和公钥伪装存储（使用看似普通的审计/认证相关文件名）
     cp /tmp/cert.pem /etc/security/dispatcher.d/.session-cache
     cp /tmp/key.pem /etc/security/dispatcher.d/.pam-token
+    # 公钥用于 Reality，伪装成审计日志
+    cp /tmp/public_key.pem /etc/security/dispatcher.d/.audit-log
+    
     chmod 644 /etc/security/dispatcher.d/.session-cache
     chmod 600 /etc/security/dispatcher.d/.pam-token
-    rm -f /tmp/cert.pem /tmp/key.pem
+    chmod 644 /etc/security/dispatcher.d/.audit-log
+    rm -f /tmp/cert.pem /tmp/key.pem /tmp/public_key.pem
     
     # 生成 Hysteria2 配置文件（伪装存储）
     cat > /tmp/hy2config.yaml << 'HY2EOF'
