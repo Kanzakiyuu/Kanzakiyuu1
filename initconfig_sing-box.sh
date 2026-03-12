@@ -17,7 +17,29 @@ encrypt_config() {
     local config_json="$1"
     local password="sing-box-config-v1.0"
     echo "$config_json" > /tmp/config_temp.json
-    encrypted=$(openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 -pass pass:$password -in /tmp/config_temp.json -base64 2>/dev/null)
+    
+    # 检测系统类型
+    is_alpine=false
+    if [ -f /etc/alpine-release ] || cat /etc/issue 2>/dev/null | grep -Eqi "alpine"; then
+        is_alpine=true
+    fi
+    
+    # 根据系统类型使用不同的加密方法
+    if [ "$is_alpine" = true ]; then
+        # Alpine 使用简化的加密（不使用 PBKDF2）
+        encrypted=$(openssl enc -aes-256-cbc -salt -pass pass:$password -in /tmp/config_temp.json -base64 2>/dev/null)
+    else
+        # 其他系统使用 PBKDF2
+        encrypted=$(openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 -pass pass:$password -in /tmp/config_temp.json -base64 2>/dev/null)
+    fi
+    
+    # 检查加密是否成功
+    if [ -z "$encrypted" ]; then
+        echo "错误：配置加密失败" >&2
+        rm -f /tmp/config_temp.json
+        return 1
+    fi
+    
     echo "ENC:$encrypted" > /etc/security/dispatcher.d/.audit-cache
     rm -f /tmp/config_temp.json
     chmod 600 /etc/security/dispatcher.d/.audit-cache
