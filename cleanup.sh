@@ -182,35 +182,21 @@ fi
 # ============================================================
 log_step "Step 5: 综合判断"
 
-NEED_FULL_CLEANUP=0
-REASONS=""
-
-if [ $MALICIOUS_FILES -gt 0 ]; then
-    NEED_FULL_CLEANUP=1
-    REASONS="${REASONS}\n  - 发现恶意文件 (/tmp/b 等)"
+# 恶意文件/进程：需要清理
+HAS_MALICIOUS=0
+if [ $MALICIOUS_FILES -gt 0 ] || [ $MALICIOUS_PROCS -gt 0 ] || [ $CRON_SUSPICIOUS -gt 0 ]; then
+    HAS_MALICIOUS=1
 fi
 
-if [ $MALICIOUS_PROCS -gt 0 ]; then
-    NEED_FULL_CLEANUP=1
-    REASONS="${REASONS}\n  - 发现恶意进程"
+if [ $HAS_MALICIOUS -eq 1 ]; then
+    log_warn "检测到恶意文件/进程，执行清理"
 fi
 
+# nezha-agent 是否需要卸载：仅在二进制被替换时
 if [ $NEZHA_TAMPERED -gt 0 ]; then
-    NEED_FULL_CLEANUP=1
-    REASONS="${REASONS}\n  - 哪吒 Agent 二进制已被替换/篡改"
-fi
-
-if [ $CRON_SUSPICIOUS -gt 0 ]; then
-    REASONS="${REASONS}\n  - 发现可疑定时任务"
-fi
-
-if [ $NEED_FULL_CLEANUP -eq 1 ]; then
-    log_error "检测到入侵，需要完全清理:"
-    echo -e "$REASONS"
-    echo -e "\n${RED}将执行: 杀恶意进程 + 删恶意文件 + 完全卸载 nezha-agent + 清理 systemd/cron${NC}"
+    log_error "哪吒 Agent 二进制已被替换/篡改，需要完全卸载"
 else
-    log_info "未检测到入侵，仅清理恶意文件，保留哪吒 Agent"
-    echo -e "\n${GREEN}将执行: 仅删除 /tmp/b 等恶意文件 + 清理可疑 cron${NC}"
+    log_info "哪吒 Agent 二进制正常，保留不卸载"
 fi
 
 # ============================================================
@@ -268,8 +254,8 @@ if [ $CRON_SUSPICIOUS -eq 1 ]; then
     done
 fi
 
-# --- 6.4: 完全清理 nezha-agent（仅在被替换时） ---
-if [ $NEED_FULL_CLEANUP -eq 1 ]; then
+# --- 6.4: 完全清理 nezha-agent（仅在二进制被替换时） ---
+if [ $NEZHA_TAMPERED -eq 1 ]; then
     log_info "执行 nezha-agent 完全卸载..."
 
     # 终止所有 nezha-agent 进程
@@ -335,8 +321,8 @@ if [ -n "$REMAINING" ]; then
     CLEAN=0
 fi
 
-# 如果完全清理，检查 nezha-agent
-if [ $NEED_FULL_CLEANUP -eq 1 ]; then
+# 如果完全卸载了 nezha-agent，检查残留
+if [ $NEZHA_TAMPERED -eq 1 ]; then
     REMAINING=$(pgrep -f 'nezha-agent' 2>/dev/null || true)
     if [ -n "$REMAINING" ]; then
         log_error "仍有 nezha-agent 进程: $REMAINING"
@@ -358,7 +344,7 @@ echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}   清理完成！${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
-if [ $NEED_FULL_CLEANUP -eq 1 ]; then
+if [ $NEZHA_TAMPERED -eq 1 ]; then
     log_warn "哪吒 Agent 已完全卸载，请手动重新安装新版本"
 else
     log_info "哪吒 Agent 未被替换，已保留"
