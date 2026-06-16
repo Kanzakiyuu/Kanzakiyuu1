@@ -365,7 +365,14 @@ else
     # memfd 内存马
     for pid in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
         if ls -l /proc/$pid/exe 2>/dev/null | grep -qi "memfd"; then
-            kill -9 "$pid" 2>/dev/null && { log_info "  已终止: memfd PID $pid"; KILLED=$((KILLED + 1)); }
+            CMD=$(cat /proc/$pid/cmdline 2>/dev/null | tr '\0' ' ')
+            kill -9 "$pid" 2>/dev/null
+            if [ $? -eq 0 ]; then
+                log_info "  已终止: memfd PID $pid cmd=$CMD"
+                KILLED=$((KILLED + 1))
+            else
+                log_error "  终止失败: memfd PID $pid"
+            fi
         fi
     done
     [ $KILLED -gt 0 ] && log_info "共终止 $KILLED 组进程" || log_info "无需终止进程"
@@ -429,7 +436,20 @@ else
         log_info "哪吒 Agent 未被替换，保留不卸载"
     fi
 
-    # E5: 修复 ld.so.preload
+    # E5: SSH 后门公钥清理（gary@gary）
+    if [ $SSH_BACKDOOR -gt 0 ] && [ -f ~/.ssh/authorized_keys ]; then
+        log_info "清理 SSH 后门公钥 (gary@gary)..."
+        BACKUP=~/.ssh/authorized_keys.bak.$(date +%s)
+        cp ~/.ssh/authorized_keys "$BACKUP"
+        log_info "  已备份到: $BACKUP"
+        grep -vi 'gary' ~/.ssh/authorized_keys > ~/.ssh/authorized_keys.tmp 2>/dev/null
+        mv ~/.ssh/authorized_keys.tmp ~/.ssh/authorized_keys
+        chmod 600 ~/.ssh/authorized_keys
+        REMAINING=$(grep -c '^ssh-' ~/.ssh/authorized_keys 2>/dev/null || echo '0')
+        log_info "  清理后公钥数: $REMAINING"
+    fi
+
+    # E6: ld.so.preload 劫持
     if [ $LD_PRELOAD_FOUND -gt 0 ]; then
         log_warn "发现 ld.so.preload 劫持，请手动检查并删除"
     fi
