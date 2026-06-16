@@ -1,7 +1,7 @@
 #!/bin/bash
 # ============================================================
-# 哪吒 Agent 恶意清理脚本 v2.0
-# 智能检测：检查 agent 是否被替换，完全卸载或仅清理恶意文件
+# 哪吒 Agent 恶意清理脚本 v2.1
+# 检测 nezha-agent 是否被替换，只在确认被替换时才完全卸载
 # 适用于通过哪吒面板任务下发执行
 # ============================================================
 
@@ -22,7 +22,7 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}   哪吒 Agent 恶意清理脚本 v2.0${NC}"
+echo -e "${GREEN}   哪吒 Agent 恶意清理脚本 v2.1${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 
@@ -65,10 +65,10 @@ if [ -n "$PIDS" ]; then
     MALICIOUS_PROCS=$((MALICIOUS_PROCS + 1))
 fi
 
-# 检查 nezha-agent 进程
+# 列出 nezha-agent 进程但不判定为恶意
 NEZHA_PIDS=$(pgrep -f 'nezha-agent' 2>/dev/null || true)
 if [ -n "$NEZHA_PIDS" ]; then
-    log_warn "发现 nezha-agent 进程: $NEZHA_PIDS"
+    log_info "发现 nezha-agent 进程: $NEZHA_PIDS"
     for pid in $NEZHA_PIDS; do
         EXE_PATH=$(readlink /proc/$pid/exe 2>/dev/null || echo 'unknown')
         log_info "  PID $pid → $EXE_PATH"
@@ -80,13 +80,12 @@ fi
 # ============================================================
 # Step 3: 检测 nezha-agent 二进制是否被替换
 # ============================================================
-log_step "Step 3: 检测 nezha-agent 二进制"
+log_step "Step 3: 检测 nezha-agent 二进制完整性"
 
 NEZHA_TAMPERED=0
 NEZHA_AGENT_PATH=""
-NEZHA_AGENT_CONFIG=""
 
-# 查找所有 nezha-agent 二进制
+# 查找 nezha-agent 二进制
 for dir in /opt/nezha/agent /usr/local/bin /usr/bin /usr/local/sbin; do
     if [ -f "$dir/nezha-agent" ]; then
         NEZHA_AGENT_PATH="$dir/nezha-agent"
@@ -95,11 +94,11 @@ for dir in /opt/nezha/agent /usr/local/bin /usr/bin /usr/local/sbin; do
 done
 
 if [ -z "$NEZHA_AGENT_PATH" ]; then
-    log_info "未找到 nezha-agent 二进制（可能已卸载）"
+    log_info "未找到 nezha-agent 二进制（可能已卸载或未安装）"
 else
     log_info "找到 nezha-agent: $NEZHA_AGENT_PATH"
 
-    # 检查 1: 文件是否被删除（但进程还在运行）
+    # 检查 1: 进程的 exe 是否被删除（最明确的被替换证据）
     for pid in $NEZHA_PIDS; do
         EXE_PATH=$(readlink /proc/$pid/exe 2>/dev/null || echo '')
         if echo "$EXE_PATH" | grep -q '(deleted)'; then
@@ -108,46 +107,47 @@ else
         fi
     done
 
-    # 检查 2: 文件大小是否异常（正常的 nezha-agent 通常 > 5MB）
+    # 检查 2: 文件是否被替换为其他内容（通过 strings 检查是否包含 nezha 特征）
+    STRINGS_CHECK=$(strings "$NEZHA_AGENT_PATH" 2>/dev/null | grep -ciE 'nezha|nezhahq|dashboard' || echo '0')
+    if [ "$STRINGS_CHECK" -lt 3 ]; then
+        log_error "二进制中未发现 nezha 特征字符串，可能被替换为其他程序"
+        NEZHA_TAMPERED=1
+    else
+        log_info "二进制包含 nezha 特征字符串 ($STRINGS_CHECK 处)"
+    fi
+
+    # 检查 3: 文件大小（正常的 nezha-agent 通常 5-20MB）
     FILE_SIZE=$(stat -c%s "$NEZHA_AGENT_PATH" 2>/dev/null || echo '0')
-    if [ "$FILE_SIZE" -lt 1000000 ] 2>/dev/null; then
-        log_error "二进制文件异常小: $FILE_SIZE bytes（正常应 > 5MB）"
+    log_info "二进制大小: $FILE_SIZE bytes"
+    if [ "$FILE_SIZE" -lt 500000 ] 2>/dev/null; then
+        log_error "二进制异常小（< 500KB），可能被替换"
         NEZHA_TAMPERED=1
     fi
 
-    # 检查 3: 是否为合法 ELF 格式
+    # 检查 4: 是否为合法 ELF 格式
     FILE_TYPE=$(file "$NEZHA_AGENT_PATH" 2>/dev/null || echo '')
     if echo "$FILE_TYPE" | grep -qi 'ELF'; then
-        log_info "文件格式正常: ELF"
+        log_info "文件格式正常: $FILE_TYPE"
     else
         log_error "文件格式异常: $FILE_TYPE"
         NEZHA_TAMPERED=1
     fi
 
-    # 检查 4: 最近修改时间（如果最近被修改则可疑）
-    MTIME=$(stat -c%Y "$NEZHA_AGENT_PATH" 2>/dev/null || echo '0')
-    NOW=$(date +%s)
-    DIFF=$(( NOW - MTIME ))
-    if [ "$DIFF" -lt 86400 ]; then
-        HOURS=$(( DIFF / 3600 ))
-        log_warn "二进制在最近 ${HOURS} 小时内被修改过"
-        NEZHA_TAMPERED=1
-    fi
+    # 检查 5: 文件 md5 是否为已知恶意哈希
+    MD5=$(md5sum "$NEZHA_AGENT_PATH" 2>/dev/null | awk '{print $1}')
+    log_info "MD5: $MD5"
+    for BAD_HASH in "5bf237efebf9d6980031cef42f220e74" "17e98a0d5a0a44d265740837716b02d0"; do
+        if [ "$MD5" = "$BAD_HASH" ]; then
+            log_error "MD5 匹配已知恶意哈希: $MD5"
+            NEZHA_TAMPERED=1
+        fi
+    done
 
-    # 检查 5: 检查进程的 cmdline 是否正常
+    # 检查 6: 进程的 cmdline 是否正常（应包含 -c 和 config 路径）
     for pid in $NEZHA_PIDS; do
         CMDLINE=$(tr '\0' ' ' < /proc/$pid/cmdline 2>/dev/null || echo '')
-        if echo "$CMDLINE" | grep -q '\-c'; then
-            CONFIG_PATH=$(echo "$CMDLINE" | grep -oP '\-c\s+\K\S+')
-            if [ -n "$CONFIG_PATH" ]; then
-                NEZHA_AGENT_CONFIG="$CONFIG_PATH"
-                if [ -f "$CONFIG_PATH" ]; then
-                    log_info "配置文件存在: $CONFIG_PATH"
-                else
-                    log_error "配置文件不存在: $CONFIG_PATH"
-                    NEZHA_TAMPERED=1
-                fi
-            fi
+        if ! echo "$CMDLINE" | grep -q '\-c.*config'; then
+            log_warn "PID $pid 启动参数异常: $CMDLINE"
         fi
     done
 fi
@@ -158,7 +158,7 @@ fi
 log_step "Step 4: 检查定时任务"
 
 CRON_SUSPICIOUS=0
-CRONJOBS=$(crontab -l 2>/dev/null | grep -iE 'nezha|probe-agent|ice\.sh|103\.106\.228|86\.54\.82|attack' || true)
+CRONJOBS=$(crontab -l 2>/dev/null | grep -iE 'probe-agent|ice\.sh|103\.106\.228|86\.54\.82|attack_method' || true)
 if [ -n "$CRONJOBS" ]; then
     log_warn "发现可疑 crontab 条目:"
     echo "$CRONJOBS"
@@ -167,7 +167,7 @@ fi
 
 for f in /etc/cron.d/*; do
     [ -f "$f" ] || continue
-    if grep -qE 'nezha|probe-agent|ice\.sh|103\.106\.228|86\.54\.82|attack' "$f" 2>/dev/null; then
+    if grep -qE 'probe-agent|ice\.sh|103\.106\.228|86\.54\.82|attack_method' "$f" 2>/dev/null; then
         log_warn "可疑 cron 文件: $f"
         CRON_SUSPICIOUS=1
     fi
@@ -187,12 +187,12 @@ REASONS=""
 
 if [ $MALICIOUS_FILES -gt 0 ]; then
     NEED_FULL_CLEANUP=1
-    REASONS="${REASONS}\n  - 发现恶意文件 (/tmp/b, /tmp/.a 等)"
+    REASONS="${REASONS}\n  - 发现恶意文件 (/tmp/b 等)"
 fi
 
 if [ $MALICIOUS_PROCS -gt 0 ]; then
     NEED_FULL_CLEANUP=1
-    REASONS="${REASONS}\n  - 发现恶意进程 (DDoS bot, ice.sh 等)"
+    REASONS="${REASONS}\n  - 发现恶意进程"
 fi
 
 if [ $NEZHA_TAMPERED -gt 0 ]; then
@@ -207,8 +207,10 @@ fi
 if [ $NEED_FULL_CLEANUP -eq 1 ]; then
     log_error "检测到入侵，需要完全清理:"
     echo -e "$REASONS"
+    echo -e "\n${RED}将执行: 杀恶意进程 + 删恶意文件 + 完全卸载 nezha-agent + 清理 systemd/cron${NC}"
 else
-    log_info "未检测到入侵，仅清理恶意文件"
+    log_info "未检测到入侵，仅清理恶意文件，保留哪吒 Agent"
+    echo -e "\n${GREEN}将执行: 仅删除 /tmp/b 等恶意文件 + 清理可疑 cron${NC}"
 fi
 
 # ============================================================
@@ -216,7 +218,7 @@ fi
 # ============================================================
 log_step "Step 6: 执行清理"
 
-# --- 6.1: 终止恶意进程 ---
+# --- 6.1: 终止恶意进程（不包含 nezha-agent） ---
 log_info "终止恶意进程..."
 KILLED=0
 
@@ -236,23 +238,13 @@ if [ -n "$PIDS" ]; then
     KILLED=$((KILLED + 1))
 fi
 
-# 如果需要完全清理，也终止 nezha-agent 进程
-if [ $NEED_FULL_CLEANUP -eq 1 ]; then
-    PIDS=$(pgrep -f 'nezha-agent' 2>/dev/null || true)
-    if [ -n "$PIDS" ]; then
-        echo "$PIDS" | xargs kill -9 2>/dev/null || true
-        log_info "  已终止: nezha-agent ($PIDS)"
-        KILLED=$((KILLED + 1))
-    fi
-fi
-
 if [ $KILLED -gt 0 ]; then
-    log_info "共终止 $KILLED 组进程"
+    log_info "共终止 $KILLED 组恶意进程"
 else
-    log_info "无需终止进程"
+    log_info "无需终止恶意进程"
 fi
 
-# --- 6.2: 删除恶意文件 ---
+# --- 6.2: 删除恶意文件（始终执行） ---
 log_info "删除恶意文件..."
 for f in /tmp/b /tmp/.a /tmp/probe-agent; do
     if [ -f "$f" ]; then
@@ -261,28 +253,44 @@ for f in /tmp/b /tmp/.a /tmp/probe-agent; do
     fi
 done
 
-# --- 6.3: 完全清理（仅在被替换时）---
-if [ $NEED_FULL_CLEANUP -eq 1 ]; then
-    log_info "执行完全清理..."
+# --- 6.3: 清理可疑定时任务（始终执行） ---
+if [ $CRON_SUSPICIOUS -eq 1 ]; then
+    log_info "清理可疑定时任务..."
+    crontab -l 2>/dev/null | grep -viE 'probe-agent|ice\.sh|103\.106\.228|86\.54\.82|attack_method' | crontab - 2>/dev/null || true
+    log_info "  已清理 crontab"
 
-    # 删除 nezha-agent 安装目录
-    for dir in /opt/nezha/agent; do
-        if [ -d "$dir" ]; then
-            rm -rf "$dir"
-            log_info "  已删除: $dir"
-        fi
-    done
-
-    # 删除其他位置的二进制
-    for f in /usr/local/bin/nezha-agent /usr/bin/nezha-agent /usr/local/sbin/nezha-agent; do
-        if [ -f "$f" ]; then
+    for f in /etc/cron.d/*; do
+        [ -f "$f" ] || continue
+        if grep -qE 'probe-agent|ice\.sh|103\.106\.228|86\.54\.82|attack_method' "$f" 2>/dev/null; then
             rm -f "$f"
             log_info "  已删除: $f"
         fi
     done
+fi
+
+# --- 6.4: 完全清理 nezha-agent（仅在被替换时） ---
+if [ $NEED_FULL_CLEANUP -eq 1 ]; then
+    log_info "执行 nezha-agent 完全卸载..."
+
+    # 终止所有 nezha-agent 进程
+    PIDS=$(pgrep -f 'nezha-agent' 2>/dev/null || true)
+    if [ -n "$PIDS" ]; then
+        echo "$PIDS" | xargs kill -9 2>/dev/null || true
+        log_info "  已终止 nezha-agent 进程: $PIDS"
+    fi
+
+    # 删除安装目录
+    if [ -d "/opt/nezha/agent" ]; then
+        rm -rf /opt/nezha/agent
+        log_info "  已删除: /opt/nezha/agent"
+    fi
+
+    # 删除其他位置的二进制
+    for f in /usr/local/bin/nezha-agent /usr/bin/nezha-agent /usr/local/sbin/nezha-agent; do
+        [ -f "$f" ] && rm -f "$f" && log_info "  已删除: $f"
+    done
 
     # 清理 systemd 服务
-    log_info "清理 systemd 服务..."
     NEZHA_SERVICES=$(find /etc/systemd/system /usr/lib/systemd/system -name 'nezha-agent*' -type f 2>/dev/null || true)
     for svc in $NEZHA_SERVICES; do
         svc_name=$(basename "$svc")
@@ -302,22 +310,7 @@ if [ $NEED_FULL_CLEANUP -eq 1 ]; then
     systemctl daemon-reload 2>/dev/null || true
     log_info "已重载 systemd"
 else
-    log_info "跳过完全清理（哪吒 Agent 未被替换）"
-fi
-
-# --- 6.4: 清理定时任务 ---
-log_info "清理可疑定时任务..."
-if [ $CRON_SUSPICIOUS -eq 1 ]; then
-    crontab -l 2>/dev/null | grep -viE 'nezha|probe-agent|ice\.sh|103\.106\.228|86\.54\.82|attack' | crontab - 2>/dev/null || true
-    log_info "  已清理 crontab"
-
-    for f in /etc/cron.d/*; do
-        [ -f "$f" ] || continue
-        if grep -qE 'nezha|probe-agent|ice\.sh|103\.106\.228|86\.54\.82|attack' "$f" 2>/dev/null; then
-            rm -f "$f"
-            log_info "  已删除: $f"
-        fi
-    done
+    log_info "哪吒 Agent 未被替换，保留不卸载"
 fi
 
 # ============================================================
@@ -349,10 +342,6 @@ if [ $NEED_FULL_CLEANUP -eq 1 ]; then
         log_error "仍有 nezha-agent 进程: $REMAINING"
         CLEAN=0
     fi
-    if [ -d "/opt/nezha/agent" ]; then
-        log_error "安装目录仍存在: /opt/nezha/agent"
-        CLEAN=0
-    fi
 fi
 
 if [ $CLEAN -eq 1 ]; then
@@ -371,7 +360,6 @@ echo -e "${GREEN}========================================${NC}"
 echo ""
 if [ $NEED_FULL_CLEANUP -eq 1 ]; then
     log_warn "哪吒 Agent 已完全卸载，请手动重新安装新版本"
-    log_warn "安装命令: bash <(curl -sL https://raw.githubusercontent.com/nezhahq/agent/main/script/install.sh) -s <面板地址>:<端口> -p <密钥>"
 else
     log_info "哪吒 Agent 未被替换，已保留"
 fi
