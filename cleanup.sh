@@ -1,8 +1,9 @@
 #!/bin/bash
 # ============================================================
-# 哪吒面板入侵 检测+清理脚本 v3.0
+# 哪吒面板入侵 检测+清理脚本 v3.1
 # 结合 nezha_ioc_check.sh 检测 + cleanup.sh 清理
 # 适用于通过哪吒面板任务下发执行
+# 注意: 不使用 set -e，避免管道执行时意外退出
 # ============================================================
 
 RED='\033[0;31m'
@@ -359,9 +360,17 @@ else
         KILLED=$((KILLED + 1))
     fi
     # 挖矿进程
-    pgrep -x xmrig >/dev/null 2>&1 && { pkill -9 xmrig; log_info "  已终止: xmrig"; KILLED=$((KILLED + 1)); }
+    if pgrep -x xmrig >/dev/null 2>&1; then
+        pkill -9 xmrig 2>/dev/null || true
+        log_info "  已终止: xmrig"
+        KILLED=$((KILLED + 1))
+    fi
     # SystemLoger
-    pgrep -x SystemLoger >/dev/null 2>&1 && { pkill -9 SystemLoger; log_info "  已终止: SystemLoger"; KILLED=$((KILLED + 1)); }
+    if pgrep -x SystemLoger >/dev/null 2>&1; then
+        pkill -9 SystemLoger 2>/dev/null || true
+        log_info "  已终止: SystemLoger"
+        KILLED=$((KILLED + 1))
+    fi
     # memfd 内存马
     for pid in $(ls /proc 2>/dev/null | grep -E '^[0-9]+$'); do
         if ls -l /proc/$pid/exe 2>/dev/null | grep -qi "memfd"; then
@@ -375,19 +384,38 @@ else
             fi
         fi
     done
-    [ $KILLED -gt 0 ] && log_info "共终止 $KILLED 组进程" || log_info "无需终止进程"
+    if [ $KILLED -gt 0 ]; then
+        log_info "共终止 $KILLED 组进程"
+    else
+        log_info "无需终止进程"
+    fi
 
     # E2: 删除恶意文件
     log_info "删除恶意文件..."
     for f in /tmp/b /tmp/.a /tmp/probe-agent; do
-        [ -f "$f" ] && rm -f "$f" && log_info "  已删除: $f"
+        if [ -f "$f" ]; then
+            rm -f "$f" 2>/dev/null || true
+            log_info "  已删除: $f"
+        fi
     done
     # 挖矿目录
-    [ -d "/root/c3pool" ] && rm -rf /root/c3pool && log_info "  已删除: /root/c3pool"
-    [ -f "/etc/systemd/system/c3pool_miner.service" ] && rm -f /etc/systemd/system/c3pool_miner.service && log_info "  已删除: c3pool_miner.service"
+    if [ -d "/root/c3pool" ]; then
+        rm -rf /root/c3pool 2>/dev/null || true
+        log_info "  已删除: /root/c3pool"
+    fi
+    if [ -f "/etc/systemd/system/c3pool_miner.service" ]; then
+        rm -f /etc/systemd/system/c3pool_miner.service 2>/dev/null || true
+        log_info "  已删除: c3pool_miner.service"
+    fi
     # systemlog 持久化
-    [ -d "/opt/systemlog" ] && rm -rf /opt/systemlog && log_info "  已删除: /opt/systemlog"
-    [ -f "/etc/systemd/system/systemlog.service" ] && rm -f /etc/systemd/system/systemlog.service && log_info "  已删除: systemlog.service"
+    if [ -d "/opt/systemlog" ]; then
+        rm -rf /opt/systemlog 2>/dev/null || true
+        log_info "  已删除: /opt/systemlog"
+    fi
+    if [ -f "/etc/systemd/system/systemlog.service" ]; then
+        rm -f /etc/systemd/system/systemlog.service 2>/dev/null || true
+        log_info "  已删除: systemlog.service"
+    fi
 
     # E3: 清理可疑 cron
     if [ $CRON_SUSPICIOUS -eq 1 ]; then
@@ -408,11 +436,20 @@ else
         log_info "执行 nezha-agent 完全卸载..."
 
         PIDS=$(pgrep -f 'nezha-agent' 2>/dev/null || true)
-        [ -n "$PIDS" ] && echo "$PIDS" | xargs kill -9 2>/dev/null && log_info "  已终止 nezha-agent: $PIDS"
+        if [ -n "$PIDS" ]; then
+            echo "$PIDS" | xargs kill -9 2>/dev/null || true
+            log_info "  已终止 nezha-agent: $PIDS"
+        fi
 
-        [ -d "/opt/nezha/agent" ] && rm -rf /opt/nezha/agent && log_info "  已删除: /opt/nezha/agent"
+        if [ -d "/opt/nezha/agent" ]; then
+            rm -rf /opt/nezha/agent 2>/dev/null || true
+            log_info "  已删除: /opt/nezha/agent"
+        fi
         for f in /usr/local/bin/nezha-agent /usr/bin/nezha-agent /usr/local/sbin/nezha-agent; do
-            [ -f "$f" ] && rm -f "$f" && log_info "  已删除: $f"
+            if [ -f "$f" ]; then
+                rm -f "$f" 2>/dev/null || true
+                log_info "  已删除: $f"
+            fi
         done
 
         NEZHA_SERVICES=$(find /etc/systemd/system /usr/lib/systemd/system -name 'nezha-agent*' -type f 2>/dev/null || true)
@@ -437,16 +474,21 @@ else
     fi
 
     # E5: SSH 后门公钥清理（gary@gary）
-    if [ $SSH_BACKDOOR -gt 0 ] && [ -f ~/.ssh/authorized_keys ]; then
-        log_info "清理 SSH 后门公钥 (gary@gary)..."
-        BACKUP=~/.ssh/authorized_keys.bak.$(date +%s)
-        cp ~/.ssh/authorized_keys "$BACKUP"
-        log_info "  已备份到: $BACKUP"
-        grep -vi 'gary' ~/.ssh/authorized_keys > ~/.ssh/authorized_keys.tmp 2>/dev/null
-        mv ~/.ssh/authorized_keys.tmp ~/.ssh/authorized_keys
-        chmod 600 ~/.ssh/authorized_keys
-        REMAINING=$(grep -c '^ssh-' ~/.ssh/authorized_keys 2>/dev/null || echo '0')
-        log_info "  清理后公钥数: $REMAINING"
+    if [ -f ~/.ssh/authorized_keys ]; then
+        GARY_COUNT=$(grep -ci 'gary' ~/.ssh/authorized_keys 2>/dev/null || echo '0')
+        if [ "$GARY_COUNT" -gt 0 ] 2>/dev/null; then
+            log_info "清理 SSH 后门公钥 (含 gary 的公钥 $GARY_COUNT 条)..."
+            BACKUP=~/.ssh/authorized_keys.bak.$(date +%s)
+            cp ~/.ssh/authorized_keys "$BACKUP"
+            log_info "  已备份到: $BACKUP"
+            grep -vi 'gary' ~/.ssh/authorized_keys > ~/.ssh/authorized_keys.tmp 2>/dev/null
+            mv ~/.ssh/authorized_keys.tmp ~/.ssh/authorized_keys
+            chmod 600 ~/.ssh/authorized_keys
+            REMAINING=$(grep -c '^ssh-' ~/.ssh/authorized_keys 2>/dev/null || echo '0')
+            log_info "  清理后公钥数: $REMAINING"
+        else
+            log_info "authorized_keys 无 gary 公钥"
+        fi
     fi
 
     # E6: ld.so.preload 劫持
